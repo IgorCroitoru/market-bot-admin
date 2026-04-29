@@ -1,0 +1,25 @@
+{
+  "parameters": {
+    "staticWebAppName": {
+      "value": "market-cloud-bot-prod"
+    },
+    "environment": {
+      "value": "prod"
+    },
+    "skuName": {
+      "value": "Standard"
+    },
+    "location": {
+      "value": "westeurope"
+    },
+    "appLocation": {
+      "value": "frontend"
+    },
+    "apiLocation": {
+      "value": "api"
+    },
+    "outputLocation": {
+      "value": "dist"
+    }
+  }
+}

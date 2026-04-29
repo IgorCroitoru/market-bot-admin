@@ -1,0 +1,26 @@
+{
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+    "staticWebAppName": {
+      "value": "market-cloud-bot-dev"
+    },
+    "environment": {
+      "value": "dev"
+    },
+    "skuName": {
+      "value": "Free"
+    },
+    "location": {
+      "value": "westeurope"
+    },
+    "appLocation": {
+      "value": "frontend"
+    },
+    "apiLocation": {
+      "value": "api"
+    },
+    "outputLocation": {
+      "value": "dist"
+    }
+  }
+}
