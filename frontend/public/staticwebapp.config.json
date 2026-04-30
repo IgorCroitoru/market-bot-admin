@@ -16,7 +16,7 @@
     }
   },
   "platform": {
-    "apiRuntime": "node:20"
+    "apiRuntime": "node:22"
   },
   "navigationFallback": {
     "rewrite": "/index.html"
