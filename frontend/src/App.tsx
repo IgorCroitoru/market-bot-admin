@@ -29,7 +29,7 @@ export default function App() {
   async function loadStatus() {
     setError("");
 
-    const response = await fetch("/api/status");
+    const response = await fetch("/api/me");
 
     if (!response.ok) {
       setError(await response.text());
