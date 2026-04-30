@@ -1,0 +1,19 @@
+{
+  "name": "market-bot-admin",
+  "private": true,
+  "workspaces": [
+    "packages/logging",
+    "api",
+    "steam-bot"
+  ],
+  "scripts": {
+    "build": "npm run build -w @market-bot-admin/logging && npm run build -w steam-bot",
+    "build:logging": "npm run build -w @market-bot-admin/logging",
+    "dev:api": "npm run start -w api",
+    "dev:bot": "npm run dev -w steam-bot"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "typescript": "^5.0.0"
+  }
+}

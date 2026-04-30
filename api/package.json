@@ -1,16 +1,12 @@
 {
   "name": "api",
-  "version": "1.0.0",
-  "description": "",
-  "main": "index.js",
-  "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
-  },
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
+  "private": true,
   "type": "commonjs",
+  "scripts": {
+    "start": "func start"
+  },
   "dependencies": {
-    "@azure/functions": "^4.14.0"
+    "@azure/functions": "^4.14.0",
+    "@market-bot-admin/logging": "file:../packages/logging"
   }
 }
