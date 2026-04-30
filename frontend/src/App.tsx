@@ -15,7 +15,10 @@ export default function App() {
   }
 
   async function loadUser() {
-    const response = await fetch("/.auth/me");
+    const response = await fetch("/.auth/me", {
+      credentials: "include",
+      cache: "no-store"
+    });
 
     if (!response.ok) {
       setUser(null);
@@ -29,7 +32,10 @@ export default function App() {
   async function loadStatus() {
     setError("");
 
-    const response = await fetch("/api/me");
+    const response = await fetch("/api/me", {
+      credentials: "include",
+      cache: "no-store"
+    });
 
     if (!response.ok) {
       setError(await response.text());
@@ -44,7 +50,8 @@ export default function App() {
     setError("");
 
     const response = await fetch("/api/stopBot", {
-      method: "POST"
+      method: "POST",
+      credentials: "include"
     });
 
     if (!response.ok) {
