@@ -7,7 +7,6 @@
     "start": "func start"
   },
   "dependencies": {
-    "@azure/functions": "^4.14.0",
-    "@market-bot-admin/logging": "file:../packages/logging"
+    "@azure/functions": "^4.14.0"
   }
 }
