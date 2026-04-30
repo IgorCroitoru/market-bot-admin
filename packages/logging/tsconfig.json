@@ -6,7 +6,7 @@
     "declaration": true,
     "declarationMap": true,
     "composite": true,
-    "ignoreDeprecations": "6.0"
+    // "ignoreDeprecations": "6.0"
   },
   "include": ["src/**/*.ts"]
 }
