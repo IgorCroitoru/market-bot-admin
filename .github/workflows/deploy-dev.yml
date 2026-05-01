@@ -31,10 +31,7 @@ jobs:
           node-version: "20"
 
       - name: Install dependencies
-        run: |
-          npm ci
-          npm ci -w frontend
-          npm ci -w api
+        run: npm ci
 
       - name: Build frontend
         run: npm run build -w frontend

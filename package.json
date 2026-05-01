@@ -2,6 +2,7 @@
   "name": "market-bot-admin",
   "private": true,
   "workspaces": [
+    "frontend",
     "api"
   ],
   "scripts": {
