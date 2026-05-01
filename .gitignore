@@ -25,4 +25,4 @@ local.*
 *.njsproj
 *.sln
 *.sw?
-
+*.tsbuildinfo
