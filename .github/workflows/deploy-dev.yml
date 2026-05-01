@@ -35,6 +35,9 @@ jobs:
           npm install
           npm ci
 
+      - name: Build logging package
+        run: npm run build -w @market-bot-admin/logging
+
       - name: Build frontend
         run: npm run build -w frontend
 
