@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - main
+      - test-deploy-old-version
     paths:
       - "frontend/**"
       - "api/**"
