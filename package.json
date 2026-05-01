@@ -2,8 +2,7 @@
   "name": "market-bot-admin",
   "private": true,
   "workspaces": [
-    "frontend",
-    "api"
+    "frontend"
   ],
   "scripts": {
     "dev:api": "npm run start -w api"
