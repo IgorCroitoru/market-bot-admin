@@ -1,7 +1,6 @@
 const { app } = require("@azure/functions");
 const { createApiLogger } = require("../logging");
 const { requireRole } = require("../auth");
-const { ApiResponse } = require("@market-bot-admin/shared");
 
 app.http("me", {
   methods: ["GET"],
