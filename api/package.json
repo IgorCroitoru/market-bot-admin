@@ -8,6 +8,6 @@
   },
   "dependencies": {
     "@azure/functions": "^4.14.0",
-    "@market-bot-admin/logging": "file:../packages/logging"
+    "pino": "^10.3.1"
   }
 }
