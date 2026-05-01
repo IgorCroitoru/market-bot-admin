@@ -8,6 +8,7 @@ on:
     paths:
       - "frontend/**"
       - "api/**"
+      - "**"
       - ".github/workflows/deploy-dev.yml"
   workflow_dispatch:
 
