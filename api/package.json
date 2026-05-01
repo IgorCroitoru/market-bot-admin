@@ -8,6 +8,7 @@
   },
   "dependencies": {
     "@azure/functions": "^4.14.0",
-    "pino": "^10.3.1"
+    "pino": "^10.3.1",
+    "@market-bot-admin/shared": "^0.0.0"
   }
 }

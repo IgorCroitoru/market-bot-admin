@@ -1,6 +1,7 @@
 const { app } = require("@azure/functions");
 const { createApiLogger } = require("../logging");
 const { requireRole } = require("../auth");
+const { ApiResponse } = require("@market-bot-admin/shared");
 
 app.http("me", {
   methods: ["GET"],
@@ -9,16 +10,12 @@ app.http("me", {
   handler: async (request, context) => {
     const logger = createApiLogger(context);
 
-    logger.info("Handling GET /me");
-    console.log("Handling GET /me")
     const auth = requireRole(request, "admin");
 
     if (!auth.ok) {
       logger.warn("Unauthorized request to /me");
       return auth.response;
     }
-
-    logger.info({ userId: auth.user.userId }, "Returning /me response");
 
     return {
       status: 200,
