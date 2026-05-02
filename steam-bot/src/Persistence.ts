@@ -11,6 +11,10 @@ export interface BotPersistence {
   loadRefreshToken(): Promise<string | null>;
   deleteRefreshToken(): Promise<void>;
 
+  saveAccessToken(token: string): Promise<void>;
+  loadAccessToken(): Promise<string | null>;
+  deleteAccessToken(): Promise<void>;
+
   saveCookies(cookies: string[]): Promise<void>;
   loadCookies(): Promise<string[] | null>;
 

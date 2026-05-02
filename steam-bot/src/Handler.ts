@@ -48,6 +48,10 @@ export class Handler {
     return this.storage.saveRefreshToken(token);
   }
 
+  onAccessToken(token: string): Promise<void> {
+    return this.storage.saveAccessToken(token);
+  }
+
   onCookies(cookies: string[]): Promise<void> {
     return this.storage.saveCookies(cookies);
   }

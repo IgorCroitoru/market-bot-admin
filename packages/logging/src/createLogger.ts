@@ -13,6 +13,7 @@ export interface CreateLoggerOptions {
   environment: "dev" | "prod" | "test";
   level?: "trace" | "debug" | "info" | "warn" | "error" | "fatal";
   context?: Record<string, unknown>;
+  redactPaths?: string []
 }
 
 export function createLogger(options: CreateLoggerOptions): AppLogger {

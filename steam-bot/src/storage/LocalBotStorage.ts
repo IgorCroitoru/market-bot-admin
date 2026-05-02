@@ -58,6 +58,18 @@ export class LocalBotStorage implements BotStorage {
     await rm(this.secretPath("refresh-token"), { force: true });
   }
 
+  async saveAccessToken(token: string): Promise<void> {
+    await this.saveSecret("access-token", token);
+  }
+
+  async loadAccessToken(): Promise<string | null> {
+    return this.loadSecret("access-token");
+  }
+
+  async deleteAccessToken(): Promise<void> {
+    await rm(this.secretPath("access-token"), { force: true });
+  }
+
   async saveCookies(cookies: string[]): Promise<void> {
     await this.saveSecret("cookies", JSON.stringify(cookies));
   }

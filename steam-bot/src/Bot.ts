@@ -39,6 +39,9 @@ export interface SendTradeOfferRequest {
   partner: string;
   token?: string;
   message?: string;
+  requestId?: string;
+  createdAt?: number | string | Date;
+  timestamp?: number | string | Date;
   itemsToGive?: TradeItem[];
   itemsToReceive?: TradeItem[];
   data?: Record<string, unknown>;
@@ -60,6 +63,42 @@ type StartSessionResponse = {
   validActions?: GuardAction[];
 };
 
+type TradeOfferSendError = Error & {
+  cause?:
+    | "TradeBan"
+    | "NewDevice"
+    | "TargetCannotTrade"
+    | "OfferLimitExceeded"
+    | "ItemServerUnavailable";
+  code?: string;
+  eresult?: number;
+};
+
+type TradeOfferQueueItem = {
+  request: SendTradeOfferRequest;
+  createdAtMs: number;
+  deadlineMs: number;
+  enqueuedAtMs: number;
+  attempts: number;
+  resolve: (result: SentTradeOffer) => void;
+  reject: (error: unknown) => void;
+};
+
+const permanentTradeOfferMessageParts = [
+  "can only be sent to friends",
+  "is not available to trade",
+  "maximum number of items allowed in inventory"
+];
+
+const permanentTradeOfferCauses = new Set([
+  "TradeBan",
+  "NewDevice",
+  "TargetCannotTrade",
+  "OfferLimitExceeded"
+]);
+
+const retriableTradeOfferCauses = new Set(["ItemServerUnavailable"]);
+
 export class Bot extends EventEmitter {
   public readonly community: SteamCommunity;
   public readonly tradeManager: TradeOfferManager;
@@ -78,8 +117,13 @@ export class Bot extends EventEmitter {
       | "loginRetryDelayMs"
       | "maxLoginAttemptsWithinPeriod"
       | "loginAttemptPeriodMs"
+      | "offerRequestTtlMs"
+      | "offerMaxRetries"
+      | "offerRetryBaseDelayMs"
+      | "offerRetryMaxDelayMs"
       | "tokenRefreshIntervalMs"
       | "tokenRefreshSkewMs"
+      | "accessTokenRefreshSkewMs"
       | "refreshTokenRenewalWindowMs"
       | "tokenPlatform"
     >
@@ -93,6 +137,8 @@ export class Bot extends EventEmitter {
   private cookies: string[] | null = null;
   private tokenRefreshTimer: NodeJS.Timeout | null = null;
   private loginAttempts: number[] = [];
+  private tradeOfferQueue: TradeOfferQueueItem[] = [];
+  private processingTradeOfferQueue = false;
   private sessionRefreshInFlight: Promise<void> | null = null;
   private eventsBound = false;
 
@@ -109,8 +155,13 @@ export class Bot extends EventEmitter {
       loginRetryDelayMs: 5_000,
       maxLoginAttemptsWithinPeriod: 3,
       loginAttemptPeriodMs: 60_000,
+      offerRequestTtlMs: 5 * 60_000,
+      offerMaxRetries: 3,
+      offerRetryBaseDelayMs: 1_000,
+      offerRetryMaxDelayMs: 30_000,
       tokenRefreshIntervalMs: 5 * 60_000,
       tokenRefreshSkewMs: 2 * 60_000,
+      accessTokenRefreshSkewMs: 4 * 60 * 60_000,
       refreshTokenRenewalWindowMs: 7 * 24 * 60 * 60_000,
       tokenPlatform: "mobile",
       ...options
@@ -178,6 +229,7 @@ export class Bot extends EventEmitter {
 
     this.tradeManager.pollInterval = -1;
     this.tradeManager.shutdown();
+    this.rejectQueuedTradeOffers(new Error("Steam bot stopped"));
     this.ready = false;
     this.setStatus("stopped");
     this.emit("ready", false);
@@ -195,51 +247,257 @@ export class Bot extends EventEmitter {
   async sendTradeOffer(request: SendTradeOfferRequest): Promise<SentTradeOffer> {
     this.assertReady();
 
-    return withRetries(
-      () =>
-        new Promise<SentTradeOffer>((resolve, reject) => {
-          const offer = this.tradeManager.createOffer(request.partner, request.token);
-
-          if (request.itemsToGive?.length) {
-            offer.addMyItems(request.itemsToGive as never[]);
-          }
-
-        //   if (request.itemsToReceive?.length) {
-        //     offer.addTheirItems(request.itemsToReceive as never[]);
-        //   }
-
-          if (request.message !== undefined) {
-            offer.setMessage(request.message);
-          }
-
-          for (const [key, value] of Object.entries(request.data ?? {})) {
-            offer.data(key, value);
-          }
-
-          offer.send((error, status) => {
-            if (error) {
-              reject(error);
-              return;
-            }
-
-            this.log.info(
-              {
-                offerId: offer.id,
-                partner: request.partner,
-                status
-              },
-              "Trade offer sent"
-            );
-            resolve({ offer, offerId: offer.id, status });
-          });
-        }),
-      {
-        attempts: this.options.maxLoginRetries,
-        delayMs: this.options.loginRetryDelayMs,
-        logger: this.log,
-        shouldRetry: isRetriableError
-      }
+    const createdAtMs = normalizeRequestTimestamp(
+      request.createdAt ?? request.timestamp ?? Date.now()
     );
+    const deadlineMs = createdAtMs + this.options.offerRequestTtlMs;
+
+    if (Date.now() > deadlineMs) {
+      throw this.createTradeOfferDeadlineError(request, createdAtMs, deadlineMs, 0);
+    }
+
+    return new Promise<SentTradeOffer>((resolve, reject) => {
+      this.tradeOfferQueue.push({
+        request,
+        createdAtMs,
+        deadlineMs,
+        enqueuedAtMs: Date.now(),
+        attempts: 0,
+        resolve,
+        reject
+      });
+
+      this.log.info(
+        {
+          requestId: request.requestId,
+          partner: request.partner,
+          queueLength: this.tradeOfferQueue.length,
+          deadlineAt: new Date(deadlineMs).toISOString()
+        },
+        "Trade offer queued"
+      );
+
+      this.processTradeOfferQueue();
+    });
+  }
+
+  private processTradeOfferQueue(): void {
+    if (this.processingTradeOfferQueue) {
+      return;
+    }
+
+    this.processingTradeOfferQueue = true;
+
+    void this.drainTradeOfferQueue().finally(() => {
+      this.processingTradeOfferQueue = false;
+
+      if (this.tradeOfferQueue.length > 0) {
+        this.processTradeOfferQueue();
+      }
+    });
+  }
+
+  private async drainTradeOfferQueue(): Promise<void> {
+    while (this.tradeOfferQueue.length > 0) {
+      const item = this.tradeOfferQueue.shift();
+
+      if (!item) {
+        continue;
+      }
+
+      try {
+        item.resolve(await this.processTradeOfferQueueItem(item));
+      } catch (error) {
+        item.reject(error);
+      }
+    }
+  }
+
+  private async processTradeOfferQueueItem(
+    item: TradeOfferQueueItem
+  ): Promise<SentTradeOffer> {
+    while (true) {
+      this.assertTradeOfferWithinDeadline(item);
+      item.attempts++;
+
+      try {
+        const result = await this.sendTradeOfferOnce(item.request);
+        this.log.info(
+          {
+            requestId: item.request.requestId,
+            offerId: result.offerId,
+            attempts: item.attempts
+          },
+          "Queued trade offer sent"
+        );
+        return result;
+      } catch (error) {
+        const tradeError = error as TradeOfferSendError;
+        const decision = this.getTradeOfferRetryDecision(tradeError, item);
+
+        if (!decision.retry) {
+          this.log.warn(
+            {
+              err: tradeError,
+              requestId: item.request.requestId,
+              partner: item.request.partner,
+              attempts: item.attempts,
+              reason: decision.reason
+            },
+            "Trade offer failed without retry"
+          );
+          throw error;
+        }
+
+        this.log.warn(
+          {
+            err: tradeError,
+            requestId: item.request.requestId,
+            partner: item.request.partner,
+            attempts: item.attempts,
+            nextAttempt: item.attempts + 1,
+            delayMs: decision.delayMs,
+            deadlineAt: new Date(item.deadlineMs).toISOString(),
+            reason: decision.reason
+          },
+          "Retrying trade offer send"
+        );
+
+        if (decision.delayMs > 0) {
+          await delay(decision.delayMs);
+        }
+      }
+    }
+  }
+
+  private sendTradeOfferOnce(request: SendTradeOfferRequest): Promise<SentTradeOffer> {
+    return new Promise<SentTradeOffer>((resolve, reject) => {
+      const offer = this.tradeManager.createOffer(request.partner, request.token);
+
+      if (request.itemsToGive?.length) {
+        offer.addMyItems(request.itemsToGive as never[]);
+      }
+
+    //   if (request.itemsToReceive?.length) {
+    //     offer.addTheirItems(request.itemsToReceive as never[]);
+    //   }
+
+      if (request.message !== undefined) {
+        offer.setMessage(request.message);
+      }
+
+      for (const [key, value] of Object.entries(request.data ?? {})) {
+        offer.data(key, value);
+      }
+
+      offer.send((error, status) => {
+        if (error) {
+          reject(error);
+          return;
+        }
+
+        this.log.info(
+          {
+            requestId: request.requestId,
+            offerId: offer.id,
+            partner: request.partner,
+            status
+          },
+          "Trade offer sent"
+        );
+        resolve({ offer, offerId: offer.id, status });
+      });
+    });
+  }
+
+  private getTradeOfferRetryDecision(
+    error: TradeOfferSendError,
+    item: TradeOfferQueueItem
+  ): { retry: boolean; reason: string; delayMs: number } {
+    if (Date.now() >= item.deadlineMs) {
+      return { retry: false, reason: "offer request deadline expired", delayMs: 0 };
+    }
+
+    if (this.isPermanentTradeOfferError(error)) {
+      return { retry: false, reason: "permanent trade offer error", delayMs: 0 };
+    }
+
+    if (item.attempts > this.options.offerMaxRetries) {
+      return { retry: false, reason: "max offer retries exceeded", delayMs: 0 };
+    }
+
+    if (!this.isRetriableTradeOfferError(error)) {
+      return { retry: false, reason: "non-retriable trade offer error", delayMs: 0 };
+    }
+
+    const remainingMs = item.deadlineMs - Date.now();
+    const backoffMs = Math.min(
+      this.options.offerRetryMaxDelayMs,
+      this.options.offerRetryBaseDelayMs * 2 ** Math.max(0, item.attempts - 1)
+    );
+    const delayMs = Math.min(backoffMs, Math.max(0, remainingMs - 1_000));
+
+    return {
+      retry: remainingMs > 0,
+      reason: "retriable trade offer error",
+      delayMs
+    };
+  }
+
+  private isRetriableTradeOfferError(error: TradeOfferSendError): boolean {
+    return (
+      Boolean(error.cause && retriableTradeOfferCauses.has(error.cause)) ||
+      isRetriableError(error)
+    );
+  }
+
+  private isPermanentTradeOfferError(error: TradeOfferSendError): boolean {
+    if (error.cause && permanentTradeOfferCauses.has(error.cause)) {
+      return true;
+    }
+
+    const message = error.message.toLowerCase();
+    return permanentTradeOfferMessageParts.some((part) => message.includes(part));
+  }
+
+  private assertTradeOfferWithinDeadline(item: TradeOfferQueueItem): void {
+    if (Date.now() > item.deadlineMs) {
+      throw this.createTradeOfferDeadlineError(
+        item.request,
+        item.createdAtMs,
+        item.deadlineMs,
+        item.attempts
+      );
+    }
+  }
+
+  private createTradeOfferDeadlineError(
+    request: SendTradeOfferRequest,
+    createdAtMs: number,
+    deadlineMs: number,
+    attempts: number
+  ): Error {
+    const error = new Error("Trade offer request expired before it could be sent") as Error & {
+      code?: string;
+      requestId?: string;
+      attempts?: number;
+      createdAtMs?: number;
+      deadlineMs?: number;
+    };
+
+    error.code = "TRADE_OFFER_REQUEST_EXPIRED";
+    error.requestId = request.requestId;
+    error.attempts = attempts;
+    error.createdAtMs = createdAtMs;
+    error.deadlineMs = deadlineMs;
+
+    return error;
+  }
+
+  private rejectQueuedTradeOffers(error: Error): void {
+    for (const item of this.tradeOfferQueue.splice(0)) {
+      item.reject(error);
+    }
   }
 
 //   async acceptOffer(offerId: string, skipStateUpdate = false): Promise<"pending" | "accepted" | "escrow"> {
@@ -308,13 +566,27 @@ export class Bot extends EventEmitter {
   }
 
   private async restoreState(): Promise<void> {
-    const [loginAttempts, pollData, cookies] = await Promise.all([
+    const [loginAttempts, pollData, cookies, accessToken] = await Promise.all([
       this.storage.loadLoginAttempts(),
       this.storage.loadPollData(),
-      this.storage.loadCookies()
+      this.storage.loadCookies(),
+      this.storage.loadAccessToken()
     ]);
 
     this.loginAttempts = this.normalizeLoginAttempts(loginAttempts ?? []);
+
+    if (isJwtUsable(accessToken, this.options.accessTokenRefreshSkewMs)) {
+      this.accessToken = accessToken;
+      this.log.info(
+        {
+          accessTokenExpiresAt: getJwtExpirationDate(accessToken)?.toISOString()
+        },
+        "Restored valid Steam access token from storage"
+      );
+    } else if (accessToken) {
+      await this.storage.deleteAccessToken();
+      this.log.info("Deleted expired or nearly expired Steam access token");
+    }
 
     if (pollData) {
       this.tradeManager.pollData = pollData;
@@ -374,6 +646,7 @@ export class Bot extends EventEmitter {
 
     const session = this.createLoginSession();
     session.refreshToken = refreshToken;
+    this.setStoredAccessToken(session);
 
     await this.refreshAccessTokenIfNeeded(session, refreshToken);
     const cookies = await session.getWebCookies();
@@ -423,7 +696,7 @@ export class Bot extends EventEmitter {
 
     if (
       this.areCookiesUsable(this.cookies) &&
-      isJwtUsable(this.accessToken, this.options.tokenRefreshSkewMs) &&
+      isJwtUsable(this.accessToken, this.options.accessTokenRefreshSkewMs) &&
       !isJwtExpiringWithin(refreshToken, this.options.refreshTokenRenewalWindowMs)
     ) {
       return;
@@ -462,18 +735,40 @@ export class Bot extends EventEmitter {
       }
 
       this.accessToken = session.accessToken;
+      if (session.accessToken) {
+        await this.storage.saveAccessToken(session.accessToken);
+      }
       return;
     }
 
-    if (!isJwtUsable(this.accessToken, this.options.tokenRefreshSkewMs)) {
+    if (!isJwtUsable(this.accessToken, this.options.accessTokenRefreshSkewMs)) {
       await session.refreshAccessToken();
       this.accessToken = session.accessToken;
+      if (session.accessToken) {
+        await this.storage.saveAccessToken(session.accessToken);
+      }
       this.log.debug(
         {
           accessTokenExpiresAt: getJwtExpirationDate(session.accessToken)?.toISOString()
         },
         "Steam access token refreshed"
       );
+    }
+  }
+
+  private setStoredAccessToken(session: LoginSession): void {
+    if (!isJwtUsable(this.accessToken, this.options.accessTokenRefreshSkewMs)) {
+      return;
+    }
+
+    try {
+      session.accessToken = this.accessToken;
+    } catch (error) {
+      this.accessToken = null;
+      this.log.warn({ err: error }, "Stored Steam access token was rejected");
+      this.storage.deleteAccessToken().catch((deleteError) => {
+        this.log.warn({ err: deleteError }, "Failed to delete rejected Steam access token");
+      });
     }
   }
 
@@ -484,6 +779,10 @@ export class Bot extends EventEmitter {
 
     if (session.refreshToken) {
       await this.storage.saveRefreshToken(session.refreshToken);
+    }
+
+    if (session.accessToken) {
+      await this.storage.saveAccessToken(session.accessToken);
     }
 
     await this.storage.saveCookies(cookies);
@@ -728,7 +1027,28 @@ export class Bot extends EventEmitter {
     this.status = status;
     this.emit("status", status);
   }
+  async waitUntilReady(timeoutMs = 60_000): Promise<void> {
+    if (this.ready) {
+      return;
+    }
+    return Promise.race([
+      new Promise<void>((resolve) => {
+        const handler = (isReady: boolean) => {
+          if (isReady) {
+            this.removeListener("ready", handler);
+            resolve();
+          }
+        };
+        this.on("ready", handler);
+      }),
+      new Promise<void>((_, reject) => {
+        setTimeout(() => reject(new Error("Timeout waiting for bot to be ready")), timeoutMs);
+      })
+    ]);
+  }
 }
+
+
 
 function resolvePlatform(platform: SteamTokenPlatform): EAuthTokenPlatformType {
   switch (platform) {
@@ -743,3 +1063,25 @@ function resolvePlatform(platform: SteamTokenPlatform): EAuthTokenPlatformType {
 }
 
 export default Bot;
+
+function normalizeRequestTimestamp(value: number | string | Date): number {
+  if (value instanceof Date) {
+    return value.getTime();
+  }
+
+  if (typeof value === "number") {
+    return value > 10_000_000_000 ? value : value * 1000;
+  }
+
+  const numericValue = Number(value);
+  if (Number.isFinite(numericValue)) {
+    return normalizeRequestTimestamp(numericValue);
+  }
+
+  const parsedValue = Date.parse(value);
+  if (Number.isFinite(parsedValue)) {
+    return parsedValue;
+  }
+
+  throw new Error(`Invalid trade offer request timestamp: ${value}`);
+}

@@ -34,8 +34,13 @@ const envSchema = z.object({
   BOT_LOGIN_RETRY_DELAY_MS: numberFromEnv(5_000),
   BOT_MAX_LOGIN_ATTEMPTS_WITHIN_PERIOD: numberFromEnv(3),
   BOT_LOGIN_ATTEMPT_PERIOD_MS: numberFromEnv(60_000),
+  BOT_OFFER_REQUEST_TTL_MS: numberFromEnv(5 * 60_000),
+  BOT_OFFER_MAX_RETRIES: numberFromEnv(4),
+  BOT_OFFER_RETRY_BASE_DELAY_MS: numberFromEnv(5_000),
+  BOT_OFFER_RETRY_MAX_DELAY_MS: numberFromEnv(30_000),
   BOT_TOKEN_REFRESH_INTERVAL_MS: numberFromEnv(5 * 60_000),
   BOT_TOKEN_REFRESH_SKEW_MS: numberFromEnv(2 * 60_000),
+  BOT_ACCESS_TOKEN_REFRESH_SKEW_MS: numberFromEnv(4 * 60 * 60_000),
   BOT_REFRESH_TOKEN_RENEWAL_WINDOW_MS: numberFromEnv(7 * 24 * 60 * 60_000)
 });
 
@@ -61,8 +66,13 @@ export function loadBotOptionsFromEnv(env: NodeJS.ProcessEnv = process.env): Bot
     loginRetryDelayMs: config.BOT_LOGIN_RETRY_DELAY_MS,
     maxLoginAttemptsWithinPeriod: config.BOT_MAX_LOGIN_ATTEMPTS_WITHIN_PERIOD,
     loginAttemptPeriodMs: config.BOT_LOGIN_ATTEMPT_PERIOD_MS,
+    offerRequestTtlMs: config.BOT_OFFER_REQUEST_TTL_MS,
+    offerMaxRetries: config.BOT_OFFER_MAX_RETRIES,
+    offerRetryBaseDelayMs: config.BOT_OFFER_RETRY_BASE_DELAY_MS,
+    offerRetryMaxDelayMs: config.BOT_OFFER_RETRY_MAX_DELAY_MS,
     tokenRefreshIntervalMs: config.BOT_TOKEN_REFRESH_INTERVAL_MS,
     tokenRefreshSkewMs: config.BOT_TOKEN_REFRESH_SKEW_MS,
+    accessTokenRefreshSkewMs: config.BOT_ACCESS_TOKEN_REFRESH_SKEW_MS,
     refreshTokenRenewalWindowMs: config.BOT_REFRESH_TOKEN_RENEWAL_WINDOW_MS,
     tokenPlatform: config.STEAM_TOKEN_PLATFORM as SteamTokenPlatform
   };

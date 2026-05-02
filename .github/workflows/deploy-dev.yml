@@ -28,7 +28,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          node-version: "22"
 
       - name: Install dependencies
         run: |
@@ -38,11 +38,11 @@ jobs:
       - name: Build shared package
         run: npm run build -w @market-bot-admin/shared
 
-      - name: Copy shared to api node_modules
-        run: |
-          mkdir -p api/node_modules/@market-bot-admin/shared
-          cp -r packages/shared/dist/* api/node_modules/@market-bot-admin/shared/
-          cp packages/shared/package.json api/node_modules/@market-bot-admin/shared/
+      # - name: Copy shared to api node_modules
+      #   run: |
+      #     mkdir -p api/node_modules/@market-bot-admin/shared
+      #     cp -r packages/shared/dist/* api/node_modules/@market-bot-admin/shared/
+      #     cp packages/shared/package.json api/node_modules/@market-bot-admin/shared/
 
       - name: Build frontend
         run: npm run build -w frontend

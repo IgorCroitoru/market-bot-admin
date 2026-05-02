@@ -68,12 +68,17 @@ export function isRetriableError(error: unknown): boolean {
     return true;
   }
 
+  if (current.cause === "ItemServerUnavailable") {
+    return true;
+  }
+
   if (typeof current.message === "string") {
     const message = current.message.toLowerCase();
 
     if (
       message.includes("timeout") ||
       message.includes("temporarily unavailable") ||
+      message.includes("item server unavailable") ||
       message.includes("socket hang up") ||
       message.includes("rate limit")
     ) {

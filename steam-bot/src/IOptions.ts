@@ -17,8 +17,13 @@ export interface BotOptions {
   loginRetryDelayMs?: number;
   maxLoginAttemptsWithinPeriod?: number;
   loginAttemptPeriodMs?: number;
+  offerRequestTtlMs?: number;
+  offerMaxRetries?: number;
+  offerRetryBaseDelayMs?: number;
+  offerRetryMaxDelayMs?: number;
   tokenRefreshIntervalMs?: number;
   tokenRefreshSkewMs?: number;
+  accessTokenRefreshSkewMs?: number;
   refreshTokenRenewalWindowMs?: number;
   tokenPlatform?: SteamTokenPlatform;
   storage?: BotStorage;

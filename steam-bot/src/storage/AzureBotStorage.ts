@@ -95,6 +95,24 @@ export class AzureBotStorage implements BotStorage {
     }
   }
 
+  async saveAccessToken(token: string): Promise<void> {
+    await this.saveSecret("access-token", token);
+  }
+
+  async loadAccessToken(): Promise<string | null> {
+    return this.loadSecret("access-token");
+  }
+
+  async deleteAccessToken(): Promise<void> {
+    try {
+      await this.secrets.beginDeleteSecret(this.secretName("access-token"));
+    } catch (error) {
+      if (!isAzureMissing(error)) {
+        throw error;
+      }
+    }
+  }
+
   async saveCookies(cookies: string[]): Promise<void> {
     await this.saveSecret("cookies", JSON.stringify(cookies));
   }
