@@ -101,6 +101,15 @@ module acrPullForContainerApp './acr-role-assignment.bicep' = if (!empty(contain
   }
 }
 
+module acrReader './acr-role-assignment.bicep' = {
+  name: 'ra-acrreader-${uniqueString(acrName, pipelineIdentityName)}'
+  params: {
+    acrName: acr.outputs.name
+    principalId: githubIdentity.outputs.principalId
+    principalType: 'ServicePrincipal'
+    roleName: 'Reader'
+  }
+}
 // module containerAppContributor './modules/container-app-role-assignment.bicep' = if (!empty(containerAppName)) {
 //   name: 'ra-aca-contributor-${uniqueString(containerAppName, pipelineIdentityName)}'
 //   params: {

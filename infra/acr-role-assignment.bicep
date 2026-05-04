@@ -15,6 +15,7 @@ param principalType string = 'ServicePrincipal'
 @allowed([
   'AcrPush'
   'AcrPull'
+  'Reader'
 ])
 @description('ACR role to assign.')
 param roleName string
@@ -22,6 +23,7 @@ param roleName string
 var roleDefinitionIds = {
   AcrPush: '8311e382-0749-4cb8-b61a-304f252e45ec'
   AcrPull: '7f951dda-4ed3-4680-a7ca-43fe172d538d'
+  Reader: 'acdd72a7-3385-48ef-bd42-f606fba81ae7'
 }
 
 resource acr 'Microsoft.ContainerRegistry/registries@2023-07-01' existing = {
