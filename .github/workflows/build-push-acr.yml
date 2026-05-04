@@ -1,0 +1,106 @@
+name: Build and push image to ACR
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  id-token: write
+  contents: read
+
+env:
+  AZURE_RESOURCE_GROUP: ${{ vars.AZURE_RESOURCE_GROUP }}
+  ACR_NAME: ${{ vars.ACR_NAME }}
+  IMAGE_REPOSITORY: ${{ vars.IMAGE_REPOSITORY }}
+  DOCKERFILE_PATH: ${{ vars.DOCKERFILE_PATH || 'Dockerfile' }}
+  BUILD_CONTEXT: ${{ vars.BUILD_CONTEXT || '.' }}
+  # ACA_NAME: ${{ vars.ACA_NAME }}
+  # ACA_RESOURCE_GROUP: ${{ vars.ACA_RESOURCE_GROUP || vars.AZURE_RESOURCE_GROUP }}
+
+jobs:
+  build-push:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Validate required repository variables
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          test -n "$AZURE_RESOURCE_GROUP" || {
+            echo "Missing GitHub repository variable: AZURE_RESOURCE_GROUP"
+            exit 1
+          }
+
+          test -n "$ACR_NAME" || {
+            echo "Missing GitHub repository variable: ACR_NAME"
+            exit 1
+          }
+
+          test -n "$IMAGE_REPOSITORY" || {
+            echo "Missing GitHub repository variable: IMAGE_REPOSITORY"
+            exit 1
+          }
+
+      - name: Azure login with OIDC
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Resolve ACR login server and image tags
+        id: image
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          ACR_LOGIN_SERVER="$(az acr show \
+            --resource-group "$AZURE_RESOURCE_GROUP" \
+            --name "$ACR_NAME" \
+            --query loginServer \
+            --output tsv)"
+
+          SHORT_SHA="${GITHUB_SHA::12}"
+
+          IMAGE_SHA="${ACR_LOGIN_SERVER}/${IMAGE_REPOSITORY}:${GITHUB_SHA}"
+          IMAGE_SHORT="${ACR_LOGIN_SERVER}/${IMAGE_REPOSITORY}:${SHORT_SHA}"
+
+          echo "acr_login_server=${ACR_LOGIN_SERVER}" >> "$GITHUB_OUTPUT"
+          echo "image_sha=${IMAGE_SHA}" >> "$GITHUB_OUTPUT"
+          echo "image_short=${IMAGE_SHORT}" >> "$GITHUB_OUTPUT"
+
+      - name: Login to ACR
+        shell: bash
+        run: |
+          set -euo pipefail
+          az acr login --name "$ACR_NAME"
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build and push image
+        uses: docker/build-push-action@v6
+        with:
+          context: ${{ env.BUILD_CONTEXT }}
+          file: ${{ env.DOCKERFILE_PATH }}
+          push: true
+          tags: |
+            ${{ steps.image.outputs.image_sha }}
+            ${{ steps.image.outputs.image_short }}
+
+      # - name: Update Azure Container App image
+      #   if: ${{ vars.ACA_NAME != '' }}
+      #   shell: bash
+      #   run: |
+      #     set -euo pipefail
+
+      #     az containerapp update \
+      #       --resource-group "$ACA_RESOURCE_GROUP" \
+      #       --name "$ACA_NAME" \
+      #       --image "${{ steps.image.outputs.image_sha }}"
