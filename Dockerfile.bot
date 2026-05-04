@@ -1,0 +1,50 @@
+# Build stage
+FROM node:22-alpine AS builder
+
+WORKDIR /app
+
+# Copy root config files first
+COPY tsconfig.base.json package.json package-lock.json ./
+
+# Copy packages and app
+COPY packages/logging ./packages/logging
+COPY steam-bot ./steam-bot
+
+# Install all dependencies
+RUN npm install
+
+# Link packages
+RUN npm ci --install-links
+
+# Build logging package (must happen before steam-bot build)
+RUN npm run build -w @market-bot-admin/logging
+
+# Verify dist folder was created
+RUN ls -la packages/logging/dist || echo "ERROR: dist folder not created"
+
+# Build steam-bot app
+RUN npm run build -w steam-bot
+
+# Runtime stage
+FROM node:22-alpine
+
+WORKDIR /app
+
+# Copy minimal files needed
+COPY package.json package-lock.json ./
+
+# Copy built packages and app from builder
+COPY --from=builder /app/packages/logging/dist ./packages/logging/dist
+COPY --from=builder /app/packages/logging/package.json ./packages/logging/
+COPY --from=builder /app/steam-bot/dist ./steam-bot/dist
+COPY --from=builder /app/steam-bot/package.json ./steam-bot/
+
+# Install production dependencies
+RUN npm install --omit=dev --legacy-peer-deps
+
+WORKDIR /app/steam-bot
+
+ENV PORT=3000
+EXPOSE 3000
+
+CMD ["npm", "start"]
