@@ -1,4 +1,4 @@
-using 'main.bicep'
+using 'main.acr.bicep'
 
 param location = 'westeurope'
 

@@ -91,15 +91,15 @@ module acrPush './acr-role-assignment.bicep' = {
   }
 }
 
-module acrPullForContainerApp './acr-role-assignment.bicep' = if (!empty(containerAppRuntimePrincipalId)) {
-  name: 'ra-acrpull-${uniqueString(acrName, containerAppRuntimePrincipalId)}'
-  params: {
-    acrName: acr.outputs.name
-    principalId: containerAppRuntimePrincipalId
-    principalType: 'ServicePrincipal'
-    roleName: 'AcrPull'
-  }
-}
+// module acrPullForContainerApp './acr-role-assignment.bicep' = if (!empty(containerAppRuntimePrincipalId)) {
+//   name: 'ra-acrpull-${uniqueString(acrName, containerAppRuntimePrincipalId)}'
+//   params: {
+//     acrName: acr.outputs.name
+//     principalId: containerAppRuntimePrincipalId
+//     principalType: 'ServicePrincipal'
+//     roleName: 'AcrPull'
+//   }
+// }
 
 module acrReader './acr-role-assignment.bicep' = {
   name: 'ra-acrreader-${uniqueString(acrName, pipelineIdentityName)}'
