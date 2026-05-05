@@ -45,8 +45,6 @@ param githubEnvironment string = ''
 // @description('Optional existing Azure Container App name. If set, the pipeline identity receives Container Apps Contributor on this app.')
 // param containerAppName string = ''
 
-@description('Optional runtime principalId of the Container App managed identity. If set, it receives AcrPull on the ACR.')
-param containerAppRuntimePrincipalId string = ''
 
 @description('Extra resource tags.')
 param tags object = {}

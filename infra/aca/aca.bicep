@@ -57,6 +57,48 @@ param botPollIntervalMs string = '30000'
 @description('Bot cancel time in milliseconds.')
 param botCancelTimeMs string = '600000'
 
+@description('Steam guard code, if required. Leave empty when not used.')
+param steamGuardCode string = ''
+
+@description('Bot login timeout in milliseconds.')
+param botLoginTimeoutMs string
+
+@description('Maximum login retries.')
+param botMaxLoginRetries string
+
+@description('Delay between login retries in milliseconds.')
+param botLoginRetryDelayMs string
+
+@description('Maximum login attempts within the configured period.')
+param botMaxLoginAttemptsWithinPeriod string 
+
+@description('Login attempt period in milliseconds.')
+param botLoginAttemptPeriodMs string 
+
+@description('Offer request TTL in milliseconds.')
+param botOfferRequestTtlMs string 
+
+@description('Maximum offer retries.')
+param botOfferMaxRetries string
+
+@description('Offer retry base delay in milliseconds.')
+param botOfferRetryBaseDelayMs string
+
+@description('Maximum offer retry delay in milliseconds.')
+param botOfferRetryMaxDelayMs string
+
+@description('Token refresh interval in milliseconds.')
+param botTokenRefreshIntervalMs string 
+
+@description('Token refresh skew in milliseconds.')
+param botTokenRefreshSkewMs string 
+
+@description('Access token refresh skew in milliseconds.')
+param botAccessTokenRefreshSkewMs string 
+
+@description('Refresh token renewal window in milliseconds.')
+param botRefreshTokenRenewalWindowMs string
+
 @description('Whether ingress is enabled.')
 param ingressEnabled bool = false
 
@@ -156,6 +198,10 @@ resource containerApp 'Microsoft.App/containerApps@2024-03-01' = {
               secretRef: secretNames.steamSharedSecret
             }
             {
+              name: 'STEAM_GUARD_CODE'
+              value: steamGuardCode
+            }
+            {
               name: 'STEAM_API_DOMAIN'
               value: steamApiDomain
             }
@@ -170,6 +216,58 @@ resource containerApp 'Microsoft.App/containerApps@2024-03-01' = {
             {
               name: 'BOT_CANCEL_TIME_MS'
               value: botCancelTimeMs
+            }
+            {
+              name: 'BOT_LOGIN_TIMEOUT_MS'
+              value: botLoginTimeoutMs
+            }
+            {
+              name: 'BOT_MAX_LOGIN_RETRIES'
+              value: botMaxLoginRetries
+            }
+            {
+              name: 'BOT_LOGIN_RETRY_DELAY_MS'
+              value: botLoginRetryDelayMs
+            }
+            {
+              name: 'BOT_MAX_LOGIN_ATTEMPTS_WITHIN_PERIOD'
+              value: botMaxLoginAttemptsWithinPeriod
+            }
+            {
+              name: 'BOT_LOGIN_ATTEMPT_PERIOD_MS'
+              value: botLoginAttemptPeriodMs
+            }
+            {
+              name: 'BOT_OFFER_REQUEST_TTL_MS'
+              value: botOfferRequestTtlMs
+            }
+            {
+              name: 'BOT_OFFER_MAX_RETRIES'
+              value: botOfferMaxRetries
+            }
+            {
+              name: 'BOT_OFFER_RETRY_BASE_DELAY_MS'
+              value: botOfferRetryBaseDelayMs
+            }
+            {
+              name: 'BOT_OFFER_RETRY_MAX_DELAY_MS'
+              value: botOfferRetryMaxDelayMs
+            }
+            {
+              name: 'BOT_TOKEN_REFRESH_INTERVAL_MS'
+              value: botTokenRefreshIntervalMs
+            }
+            {
+              name: 'BOT_TOKEN_REFRESH_SKEW_MS'
+              value: botTokenRefreshSkewMs
+            }
+            {
+              name: 'BOT_ACCESS_TOKEN_REFRESH_SKEW_MS'
+              value: botAccessTokenRefreshSkewMs
+            }
+            {
+              name: 'BOT_REFRESH_TOKEN_RENEWAL_WINDOW_MS'
+              value: botRefreshTokenRenewalWindowMs
             }
           ]
         }

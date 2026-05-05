@@ -1,3 +1,6 @@
+@description('Azure region for all resources.')
+param location string
+
 @description('Container App runtime identity name.')
 param runtimeIdentityName string
 
@@ -25,6 +28,15 @@ param useAcrImageOnFirstDeploy bool = true
 @description('Public bootstrap image used when ACR has no image yet.')
 param bootstrapImage string = 'mcr.microsoft.com/azuredocs/containerapps-helloworld:latest'
 
+@description('Environment name.')
+param environmentName string
+
+@description('Bot poll interval in milliseconds.')
+param botPollIntervalMs string 
+
+@description('Bot cancel time in milliseconds.')
+param botCancelTimeMs string 
+
 @description('Bot environment.')
 param botEnv string = environmentName
 
@@ -37,6 +49,48 @@ param steamApiDomain string = 'localhost'
 @description('Steam token platform.')
 param steamTokenPlatform string = 'mobile'
 
+@description('Steam guard code, if required. Leave empty when not used.')
+param steamGuardCode string = ''
+
+@description('Bot login timeout in milliseconds.')
+param botLoginTimeoutMs string
+
+@description('Maximum login retries.')
+param botMaxLoginRetries string
+
+@description('Delay between login retries in milliseconds.')
+param botLoginRetryDelayMs string
+
+@description('Maximum login attempts within the configured period.')
+param botMaxLoginAttemptsWithinPeriod string = '3'
+
+@description('Login attempt period in milliseconds.')
+param botLoginAttemptPeriodMs string
+
+@description('Offer request TTL in milliseconds.')
+param botOfferRequestTtlMs string
+
+@description('Maximum offer retries.')
+param botOfferMaxRetries string
+
+@description('Offer retry base delay in milliseconds.')
+param botOfferRetryBaseDelayMs string 
+
+@description('Maximum offer retry delay in milliseconds.')
+param botOfferRetryMaxDelayMs string
+
+@description('Token refresh interval in milliseconds.')
+param botTokenRefreshIntervalMs string
+
+@description('Token refresh skew in milliseconds.')
+param botTokenRefreshSkewMs string
+
+@description('Access token refresh skew in milliseconds.')
+param botAccessTokenRefreshSkewMs string
+
+@description('Refresh token renewal window in milliseconds.')
+param botRefreshTokenRenewalWindowMs string
+
 @description('Whether Container App ingress is enabled.')
 param ingressEnabled bool = false
 
@@ -45,6 +99,15 @@ param externalIngress bool = false
 
 @description('Target port.')
 param targetPort int = 8080
+
+@description('Project/application name used in tags.')
+param commonTags object = {}
+
+@description('Container Registry name.')
+param acrName string
+
+@description('Github pipeline identity name. This identity will be granted permissions to push to ACR and optionally manage Container App.')
+param pipelineIdentityName string
 
 module runtimeIdentity './user-assigned-identity.bicep' = {
   name: 'id-runtime-${uniqueString(resourceGroup().id, runtimeIdentityName)}'
@@ -55,7 +118,7 @@ module runtimeIdentity './user-assigned-identity.bicep' = {
   }
 }
 
-module keyVault './modules/key-vault.bicep' = {
+module keyVault './key-vault.bicep' = {
   name: 'kv-${uniqueString(resourceGroup().id, keyVaultName)}'
   params: {
     keyVaultName: keyVaultName
@@ -64,7 +127,7 @@ module keyVault './modules/key-vault.bicep' = {
   }
 }
 
-module acrPullForRuntime '../acr/main.acr.bicep' = {
+module acrPullForRuntime '../acr/acr-role-assignment.bicep' = {
   name: 'ra-acrpull-runtime-${uniqueString(acrName, runtimeIdentityName)}'
   params: {
     acrName: acrName
@@ -74,17 +137,20 @@ module acrPullForRuntime '../acr/main.acr.bicep' = {
   }
 }
 
-module keyVaultSecretsUserForRuntime './modules/key-vault-role-assignment.bicep' = {
+module keyVaultSecretsUserForRuntime './key-vault-role-assignment.bicep' = {
   name: 'ra-kv-secrets-runtime-${uniqueString(keyVaultName, runtimeIdentityName)}'
+  dependsOn: [
+    keyVault
+  ]
   params: {
-    keyVaultName: keyVault.outputs.name
+    keyVaultName: keyVaultName
     principalId: runtimeIdentity.outputs.principalId
     principalType: 'ServicePrincipal'
     roleName: 'KeyVaultSecretsUser'
   }
 }
 
-module logAnalytics './modules/log-analytics.bicep' = {
+module logAnalytics './log-analytics.bicep' = {
   name: 'log-${uniqueString(resourceGroup().id, logAnalyticsWorkspaceName)}'
   params: {
     workspaceName: logAnalyticsWorkspaceName
@@ -95,10 +161,17 @@ module logAnalytics './modules/log-analytics.bicep' = {
 }
 
 resource logAnalyticsWorkspace 'Microsoft.OperationalInsights/workspaces@2023-09-01' existing = {
-  name: logAnalytics.outputs.name
+  dependsOn: [
+    logAnalytics
+  ]
+  name: logAnalyticsWorkspaceName
 }
 
-module containerAppsEnvironment './modules/container-app-environment.bicep' = {
+resource acr 'Microsoft.ContainerRegistry/registries@2023-07-01' existing = {
+  name: acrName
+}
+
+module containerAppsEnvironment './aca-environment.bicep' = {
   name: 'cae-${uniqueString(resourceGroup().id, containerAppsEnvironmentName)}'
   params: {
     environmentName: containerAppsEnvironmentName
@@ -109,10 +182,10 @@ module containerAppsEnvironment './modules/container-app-environment.bicep' = {
   }
 }
 
-var acrImage = '${acr.outputs.loginServer}/${imageRepository}:${initialImageTag}'
+var acrImage = '${acr.properties.loginServer}/${imageRepository}:${initialImageTag}'
 var selectedImage = useAcrImageOnFirstDeploy ? acrImage : bootstrapImage
 
-module containerApp './modules/container-app.bicep' = {
+module containerApp './aca.bicep' = {
   name: 'ca-${uniqueString(resourceGroup().id, containerAppName)}'
   dependsOn: [
     acrPullForRuntime
@@ -124,18 +197,50 @@ module containerApp './modules/container-app.bicep' = {
     managedEnvironmentId: containerAppsEnvironment.outputs.id
     image: selectedImage
     runtimeIdentityId: runtimeIdentity.outputs.id
-    acrLoginServer: acr.outputs.loginServer
+    acrLoginServer: acr.properties.loginServer
     keyVaultUri: keyVault.outputs.vaultUri
     botEnv: botEnv
+    botPollIntervalMs: botPollIntervalMs
+    botCancelTimeMs: botCancelTimeMs
     logLevel: logLevel
     steamApiDomain: steamApiDomain
     steamTokenPlatform: steamTokenPlatform
+    steamGuardCode: steamGuardCode
+    botLoginTimeoutMs: botLoginTimeoutMs
+    botMaxLoginRetries: botMaxLoginRetries
+    botLoginRetryDelayMs: botLoginRetryDelayMs
+    botMaxLoginAttemptsWithinPeriod: botMaxLoginAttemptsWithinPeriod
+    botLoginAttemptPeriodMs: botLoginAttemptPeriodMs
+    botOfferRequestTtlMs: botOfferRequestTtlMs
+    botOfferMaxRetries: botOfferMaxRetries
+    botOfferRetryBaseDelayMs: botOfferRetryBaseDelayMs
+    botOfferRetryMaxDelayMs: botOfferRetryMaxDelayMs
+    botTokenRefreshIntervalMs: botTokenRefreshIntervalMs
+    botTokenRefreshSkewMs: botTokenRefreshSkewMs
+    botAccessTokenRefreshSkewMs: botAccessTokenRefreshSkewMs
+    botRefreshTokenRenewalWindowMs: botRefreshTokenRenewalWindowMs
     ingressEnabled: ingressEnabled
     externalIngress: externalIngress
     targetPort: targetPort
     minReplicas: 1
     maxReplicas: 1
     tags: commonTags
+  }
+}
+
+resource githubIdentity 'Microsoft.ManagedIdentity/userAssignedIdentities@2018-11-30' existing = {
+  name: pipelineIdentityName
+}
+
+module pipelineCanUpdateContainerApp './aca-role-assignment.bicep' = {
+  name: 'ra-aca-contributor-${uniqueString(containerAppName, pipelineIdentityName)}'
+  dependsOn: [
+    containerApp
+  ]
+  params: {
+    containerAppName: containerAppName
+    principalId: githubIdentity.properties.principalId
+    principalType: 'ServicePrincipal'
   }
 }
 

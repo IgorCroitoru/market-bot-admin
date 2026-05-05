@@ -94,13 +94,13 @@ jobs:
             ${{ steps.image.outputs.image_sha }}
             ${{ steps.image.outputs.image_short }}
 
-      # - name: Update Azure Container App image
-      #   if: ${{ vars.ACA_NAME != '' }}
-      #   shell: bash
-      #   run: |
-      #     set -euo pipefail
+      - name: Update Azure Container App image
+        if: ${{ vars.ACA_NAME != '' }}
+        shell: bash
+        run: |
+          set -euo pipefail
 
-      #     az containerapp update \
-      #       --resource-group "$ACA_RESOURCE_GROUP" \
-      #       --name "$ACA_NAME" \
-      #       --image "${{ steps.image.outputs.image_sha }}"
+          az containerapp update \
+            --resource-group "$ACA_RESOURCE_GROUP" \
+            --name "$ACA_NAME" \
+            --image "${{ steps.image.outputs.image_sha }}"
