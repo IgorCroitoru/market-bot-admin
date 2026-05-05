@@ -16,8 +16,8 @@ env:
   IMAGE_REPOSITORY: ${{ vars.IMAGE_REPOSITORY }}
   DOCKERFILE_PATH: ${{ vars.DOCKERFILE_PATH || 'Dockerfile' }}
   BUILD_CONTEXT: ${{ vars.BUILD_CONTEXT || '.' }}
-  # ACA_NAME: ${{ vars.ACA_NAME }}
-  # ACA_RESOURCE_GROUP: ${{ vars.ACA_RESOURCE_GROUP || vars.AZURE_RESOURCE_GROUP }}
+  ACA_NAME: ${{ vars.ACA_NAME }}
+  ACA_RESOURCE_GROUP: ${{ vars.ACA_RESOURCE_GROUP || vars.AZURE_RESOURCE_GROUP }}
 
 jobs:
   build-push:
