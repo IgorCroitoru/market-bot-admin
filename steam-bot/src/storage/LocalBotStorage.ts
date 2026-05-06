@@ -2,6 +2,7 @@ import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import type { BotStorage } from "../Persistence";
 import type { PollData } from "../PollData";
+import { TokenCache } from "./AzureBotStorage";
 
 export interface LocalBotStorageOptions {
   accountName: string;
@@ -18,6 +19,12 @@ export class LocalBotStorage implements BotStorage {
 
     this.dataDir = path.join(rootDir, accountDir, "data");
     this.secretsDir = path.join(rootDir, accountDir, "secrets");
+  }
+  async saveTokenCache(tokenCache: TokenCache): Promise<void> {
+    await this.saveData("token-cache", tokenCache);
+  }
+  async loadTokenCache(): Promise<TokenCache | null> {
+    return this.loadData<TokenCache>("token-cache");
   }
 
   async savePollData(pollData: PollData): Promise<void> {
@@ -46,44 +53,6 @@ export class LocalBotStorage implements BotStorage {
     }
   }
 
-  async saveRefreshToken(token: string): Promise<void> {
-    await this.saveSecret("refresh-token", token);
-  }
-
-  async loadRefreshToken(): Promise<string | null> {
-    return this.loadSecret("refresh-token");
-  }
-
-  async deleteRefreshToken(): Promise<void> {
-    await rm(this.secretPath("refresh-token"), { force: true });
-  }
-
-  async saveAccessToken(token: string): Promise<void> {
-    await this.saveSecret("access-token", token);
-  }
-
-  async loadAccessToken(): Promise<string | null> {
-    return this.loadSecret("access-token");
-  }
-
-  async deleteAccessToken(): Promise<void> {
-    await rm(this.secretPath("access-token"), { force: true });
-  }
-
-  async saveCookies(cookies: string[]): Promise<void> {
-    await this.saveSecret("cookies", JSON.stringify(cookies));
-  }
-
-  async loadCookies(): Promise<string[] | null> {
-    const value = await this.loadSecret("cookies");
-
-    if (!value) {
-      return null;
-    }
-
-    return JSON.parse(value) as string[];
-  }
-
   async saveLoginAttempts(attempts: number[]): Promise<void> {
     await this.saveData("login-attempts", attempts);
   }
@@ -92,22 +61,6 @@ export class LocalBotStorage implements BotStorage {
     return this.loadData<number[]>("login-attempts");
   }
 
-  private async saveSecret(key: string, value: string): Promise<void> {
-    await mkdir(this.secretsDir, { recursive: true });
-    await writeFile(this.secretPath(key), value, "utf8");
-  }
-
-  private async loadSecret(key: string): Promise<string | null> {
-    try {
-      return await readFile(this.secretPath(key), "utf8");
-    } catch (error) {
-      if (isMissingFile(error)) {
-        return null;
-      }
-
-      throw error;
-    }
-  }
 
   private dataPath(key: string): string {
     return path.join(this.dataDir, `${sanitizePathPart(key)}.json`);

@@ -44,17 +44,17 @@ export class Handler {
     return this.storage.savePollData(pollData);
   }
 
-  onRefreshToken(token: string): Promise<void> {
-    return this.storage.saveRefreshToken(token);
-  }
+  // onRefreshToken(token: string): Promise<void> {
+  //   return this.storage.saveRefreshToken(token);
+  // }
 
-  onAccessToken(token: string): Promise<void> {
-    return this.storage.saveAccessToken(token);
-  }
+  // onAccessToken(token: string): Promise<void> {
+  //   return this.storage.saveAccessToken(token);
+  // }
 
-  onCookies(cookies: string[]): Promise<void> {
-    return this.storage.saveCookies(cookies);
-  }
+  // onCookies(cookies: string[]): Promise<void> {
+  //   return this.storage.saveCookies(cookies);
+  // }
 
   onLoginAttempts(attempts: number[]): Promise<void> {
     return this.storage.saveLoginAttempts(attempts);

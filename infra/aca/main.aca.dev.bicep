@@ -91,6 +91,9 @@ param botAccessTokenRefreshSkewMs string
 @description('Refresh token renewal window in milliseconds.')
 param botRefreshTokenRenewalWindowMs string
 
+@description('Bot storage driver.')
+param storageDriver string
+
 @description('Whether Container App ingress is enabled.')
 param ingressEnabled bool = false
 
@@ -114,6 +117,7 @@ param blobContainerName string
 
 @description('Bot storage name')
 param storageAccountName string
+
 module runtimeIdentity './user-assigned-identity.bicep' = {
   name: 'id-runtime-${uniqueString(resourceGroup().id, runtimeIdentityName)}'
   params: {
@@ -197,7 +201,10 @@ module containerApp './aca.bicep' = {
     keyVaultSecretsUserForRuntime
   ]
   params: {
+    blobContainerName: blobContainerName
+    storageAccountName: storageAccountName
     containerAppName: containerAppName
+    storageDriver: storageDriver
     location: location
     managedEnvironmentId: containerAppsEnvironment.outputs.id
     image: selectedImage

@@ -30,6 +30,7 @@ param useAcrImageOnFirstDeploy = false
 param botPollIntervalMs = '30000'
 param botCancelTimeMs = '600000'
 param botEnv = 'dev'
+param storageDriver = 'azure'
 param logLevel = 'info'
 param steamApiDomain = 'localhost'
 param steamTokenPlatform = 'mobile'

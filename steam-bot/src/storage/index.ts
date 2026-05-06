@@ -17,9 +17,7 @@ export function createBotStorageFromEnv(options: CreateStorageOptions): BotStora
     return new AzureBotStorage({
       accountName: options.accountName,
       containerName: env.AZURE_BOT_CONTAINER_NAME,
-      connectionString: env.AZURE_STORAGE_CONNECTION_STRING,
       storageAccountName: env.AZURE_STORAGE_ACCOUNT_NAME,
-      keyVaultUrl: required(env.KEY_VAULT_URL, "KEY_VAULT_URL")
     });
   }
 

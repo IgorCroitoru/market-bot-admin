@@ -7,24 +7,28 @@ import type { PollData } from "../PollData";
 export interface AzureBotStorageOptions {
   accountName: string;
   containerName?: string;
-  connectionString?: string;
   storageAccountName?: string;
-  keyVaultUrl: string;
+}
+
+export type TokenCache = {
+  accessToken: string | null;
+  refreshToken: string | null;
+  sessionCookies: string[] | null;
+  accessTokenExpiry?: number;
+  refreshTokenExpiry?: number;
+  updatedAt: number;
 }
 
 export class AzureBotStorage implements BotStorage {
   private readonly accountName: string;
   private readonly container: ContainerClient;
-  private readonly secrets: SecretClient;
   private ensureContainerPromise: Promise<void> | null = null;
 
   constructor(options: AzureBotStorageOptions) {
     this.accountName = options.accountName;
 
     const credential = new DefaultAzureCredential();
-    const blobServiceClient = options.connectionString
-      ? BlobServiceClient.fromConnectionString(options.connectionString)
-      : new BlobServiceClient(
+    const blobServiceClient = new BlobServiceClient(
           `https://${required(options.storageAccountName, "AZURE_STORAGE_ACCOUNT_NAME")}.blob.core.windows.net`,
           credential
         );
@@ -32,7 +36,6 @@ export class AzureBotStorage implements BotStorage {
     this.container = blobServiceClient.getContainerClient(
       options.containerName ?? "steam-bot"
     );
-    this.secrets = new SecretClient(options.keyVaultUrl, credential);
   }
 
   async savePollData(pollData: PollData): Promise<void> {
@@ -53,6 +56,13 @@ export class AzureBotStorage implements BotStorage {
         blobContentType: "application/json"
       }
     });
+  }
+
+  async saveTokenCache(tokenCache: TokenCache): Promise<void> {
+    await this.saveData("token-cache", tokenCache);
+  }
+  async loadTokenCache(): Promise<TokenCache | null> {
+    return this.loadData<TokenCache>("token-cache");
   }
 
   async loadData<T>(key: string): Promise<T | null> {
@@ -77,31 +87,31 @@ export class AzureBotStorage implements BotStorage {
     }
   }
 
-  async saveRefreshToken(token: string): Promise<void> {
-    await this.saveSecret("refresh-token", token);
-  }
+  // async saveRefreshToken(token: string): Promise<void> {
+  //   await this.saveSecret("refresh-token", token);
+  // }
 
-  async loadRefreshToken(): Promise<string | null> {
-    return this.loadSecret("refresh-token");
-  }
+  // async loadRefreshToken(): Promise<string | null> {
+  //   return this.loadSecret("refresh-token");
+  // }
 
-  async deleteRefreshToken(): Promise<void> {
-    try {
-      await this.secrets.beginDeleteSecret(this.secretName("refresh-token"));
-    } catch (error) {
-      if (!isAzureMissing(error)) {
-        throw error;
-      }
-    }
-  }
+  // async deleteRefreshToken(): Promise<void> {
+  //   try {
+  //     await this.secrets.beginDeleteSecret(this.secretName("refresh-token"));
+  //   } catch (error) {
+  //     if (!isAzureMissing(error)) {
+  //       throw error;
+  //     }
+  //   }
+  // }
 
-  async saveAccessToken(token: string): Promise<void> {
-    await this.saveSecret("access-token", token);
-  }
+  // async saveAccessToken(token: string): Promise<void> {
+  //   await this.saveSecret("access-token", token);
+  // }
 
-  async loadAccessToken(): Promise<string | null> {
-    return this.loadSecret("access-token");
-  }
+  // async loadAccessToken(): Promise<string | null> {
+  //   return this.loadSecret("access-token");
+  // }
 
   // async deleteAccessToken(): Promise<void> {
   //   try {
@@ -113,19 +123,19 @@ export class AzureBotStorage implements BotStorage {
   //   }
   // }
 
-  async saveCookies(cookies: string[]): Promise<void> {
-    await this.saveSecret("cookies", JSON.stringify(cookies));
-  }
+  // async saveCookies(cookies: string[]): Promise<void> {
+  //   await this.saveSecret("cookies", JSON.stringify(cookies));
+  // }
 
-  async loadCookies(): Promise<string[] | null> {
-    const value = await this.loadSecret("cookies");
+  // async loadCookies(): Promise<string[] | null> {
+  //   const value = await this.loadSecret("cookies");
 
-    if (!value) {
-      return null;
-    }
+  //   if (!value) {
+  //     return null;
+  //   }
 
-    return JSON.parse(value) as string[];
-  }
+  //   return JSON.parse(value) as string[];
+  // }
 
   async saveLoginAttempts(attempts: number[]): Promise<void> {
     await this.saveData("login-attempts", attempts);
@@ -135,22 +145,6 @@ export class AzureBotStorage implements BotStorage {
     return this.loadData<number[]>("login-attempts");
   }
 
-  private async saveSecret(key: string, value: string): Promise<void> {
-    await this.secrets.setSecret(this.secretName(key), value);
-  }
-
-  private async loadSecret(key: string): Promise<string | null> {
-    try {
-      const secret = await this.secrets.getSecret(this.secretName(key));
-      return secret.value ?? null;
-    } catch (error) {
-      if (isAzureMissing(error)) {
-        return null;
-      }
-
-      throw error;
-    }
-  }
 
   private async ensureContainer(): Promise<void> {
     this.ensureContainerPromise ??= this.container.createIfNotExists().then(() => undefined);

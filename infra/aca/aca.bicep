@@ -25,6 +25,12 @@ param minReplicas int = 1
 @description('Maximum replicas.')
 param maxReplicas int = 1
 
+@description('Container name.')
+param blobContainerName string
+  
+@description('Storage account name.')
+param storageAccountName string
+
 @description('User-assigned runtime identity resource ID.')
 param runtimeIdentityId string
 
@@ -42,6 +48,9 @@ param logLevel string = 'info'
 
 @description('Steam API domain.')
 param steamApiDomain string = 'localhost'
+
+@description('Bot storage driver.')
+param storageDriver string
 
 @allowed([
   'mobile'
@@ -180,6 +189,18 @@ resource containerApp 'Microsoft.App/containerApps@2024-03-01' = {
             {
               name: 'BOT_ENV'
               value: botEnv
+            }
+            {
+              name: 'BOT_STORAGE_DRIVER'
+              value: storageDriver
+            }
+            {
+              name: 'AZURE_BOT_CONTAINER_NAME'
+              value: blobContainerName
+            }
+            {
+              name: 'AZURE_STORAGE_ACCOUNT_NAME'
+              value: storageAccountName
             }
             {
               name: 'LOG_LEVEL'

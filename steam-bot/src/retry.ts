@@ -30,7 +30,8 @@ const retriableEresults = new Set([
   55, // RemoteCallFailed
   76, // BadResponse
   79, // UnexpectedError
-  84, // RateLimitExceeded
+  84, // RateLimitExceeded,
+  88, // TwoFactorCodeMismatch
   95, // AccountLimitExceeded / TooManyAccountsAccessThisResource
   96, // AccountActivityLimitExceeded
   110 // WGNetworkSendExceeded

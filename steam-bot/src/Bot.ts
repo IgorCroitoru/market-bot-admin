@@ -17,6 +17,7 @@ import { getSteamLoginSecureJwt, getJwtExpirationDate, isJwtExpiringWithin, isJw
 import { isRetriableError, withRetries, delay } from "./retry";
 import { logger as defaultLogger } from "./logger";
 import { createBotStorageFromEnv } from "./storage";
+import { TokenCache } from "./storage/AzureBotStorage";
 
 export type BotStatus =
   | "idle"
@@ -134,9 +135,15 @@ export class Bot extends EventEmitter {
 
   private status: BotStatus = "idle";
   private ready = false;
-  private refreshToken: string | null = null;
-  private accessToken: string | null = null;
-  private cookies: string[] | null = null;
+  private tokenCache: TokenCache = {
+    refreshToken: null,
+    accessToken: null,
+    sessionCookies: null,
+    updatedAt: 0
+  };
+  // private refreshToken: string | null = null;
+  // private accessToken: string | null = null;
+  // private cookies: string[] | null = null;
   private tokenRefreshTimer: NodeJS.Timeout | null = null;
   private loginAttempts: number[] = [];
   private tradeOfferQueue: TradeOfferQueueItem[] = [];
@@ -570,37 +577,38 @@ export class Bot extends EventEmitter {
   }
 
   private async restoreState(): Promise<void> {
-    const [loginAttempts, pollData, cookies, accessToken] = await Promise.all([
+    const [loginAttempts, pollData, tokenCache] = await Promise.all([
       this.storage.loadLoginAttempts(),
       this.storage.loadPollData(),
-      this.storage.loadCookies(),
-      this.storage.loadAccessToken()
+      this.storage.loadTokenCache()
     ]);
 
     this.loginAttempts = this.normalizeLoginAttempts(loginAttempts ?? []);
 
-    if (isJwtUsable(accessToken, this.options.accessTokenRefreshSkewMs)) {
-      this.accessToken = accessToken;
-      this.log.info(
-        {
-          accessTokenExpiresAt: getJwtExpirationDate(accessToken)?.toISOString()
-        },
-        "Restored valid Steam access token from storage"
-      );
-    } else if (accessToken) {
+    if (tokenCache) {
+      this.tokenCache = tokenCache
+      if(isJwtUsable(tokenCache.accessToken, this.options.accessTokenRefreshSkewMs))
+      {
+        this.log.info(
+          {
+            accessTokenExpiresAt: getJwtExpirationDate(tokenCache.accessToken)?.toISOString()
+          },
+          "Restored valid Steam access token from storage"
+        );
+      }
+
+      if (this.areCookiesUsable(tokenCache.sessionCookies)) {
+        await this.setCookies(tokenCache.sessionCookies);
+        this.log.info("Restored valid Steam cookies from storage");
+      }
+    } else {
       // await this.storage.deleteAccessToken();
-      this.log.info("Access token in storage is expired or expiring soon; ignoring");
+      this.log.info("Token cache in storage is empty; ignoring");
     }
 
     if (pollData) {
       this.tradeManager.pollData = pollData;
       this.log.info("Restored trade poll data");
-    }
-
-    if (this.areCookiesUsable(cookies)) {
-      this.cookies = cookies;
-      await this.setCookies(cookies);
-      this.log.info("Restored valid Steam cookies from storage");
     }
   }
 
@@ -609,18 +617,16 @@ export class Bot extends EventEmitter {
       async () => {
         await this.waitForLoginSlot();
 
-        const storedRefreshToken = await this.storage.loadRefreshToken();
-
-        if (isJwtUsable(storedRefreshToken, this.options.tokenRefreshSkewMs)) {
+        if (isJwtUsable(this.tokenCache?.refreshToken, this.options.tokenRefreshSkewMs)) {
           try {
-            await this.loginWithRefreshToken(storedRefreshToken);
+            await this.loginWithRefreshToken(this.tokenCache.refreshToken);
             return;
           } catch (error) {
             this.log.warn({ err: error }, "Refresh-token login failed");
 
             if (!isRetriableError(error)) {
-              // await this.storage.deleteRefreshToken();
-              this.refreshToken = null;
+              this.tokenCache.refreshToken = null;
+              await this.storage.saveTokenCache(this.tokenCache);
             } else {
               throw error;
             }
@@ -698,7 +704,7 @@ export class Bot extends EventEmitter {
       return;
     }
 
-    const refreshToken = this.refreshToken ?? (await this.storage.loadRefreshToken());
+    const refreshToken = this.tokenCache?.refreshToken ?? (await this.storage.loadTokenCache())?.refreshToken;
 
     if (!isJwtUsable(refreshToken, this.options.tokenRefreshSkewMs)) {
       this.log.warn({ reason }, "Refresh token is missing or expiring; performing full login");
@@ -707,8 +713,8 @@ export class Bot extends EventEmitter {
     }
 
     if (
-      this.areCookiesUsable(this.cookies) &&
-      isJwtUsable(this.accessToken, this.options.accessTokenRefreshSkewMs) &&
+      this.areCookiesUsable(this.tokenCache?.sessionCookies) &&
+      isJwtUsable(this.tokenCache?.accessToken, this.options.accessTokenRefreshSkewMs) &&
       !isJwtExpiringWithin(refreshToken, this.options.refreshTokenRenewalWindowMs)
     ) {
       return;
@@ -736,8 +742,8 @@ export class Bot extends EventEmitter {
       const renewed = await session.renewRefreshToken();
 
       if (renewed && session.refreshToken) {
-        await this.storage.saveRefreshToken(session.refreshToken);
-        this.refreshToken = session.refreshToken;
+        this.tokenCache.refreshToken = session.refreshToken;
+        await this.storage.saveTokenCache(this.tokenCache);
         this.log.info(
           {
             refreshTokenExpiresAt: getJwtExpirationDate(session.refreshToken)?.toISOString()
@@ -746,18 +752,18 @@ export class Bot extends EventEmitter {
         );
       }
 
-      this.accessToken = session.accessToken;
+      this.tokenCache.accessToken = session.accessToken;
       if (session.accessToken) {
-        await this.storage.saveAccessToken(session.accessToken);
+        await this.storage.saveTokenCache(this.tokenCache);
       }
       return;
     }
 
-    if (!isJwtUsable(this.accessToken, this.options.accessTokenRefreshSkewMs)) {
+    if (!isJwtUsable(this.tokenCache.accessToken, this.options.accessTokenRefreshSkewMs)) {
       await session.refreshAccessToken();
-      this.accessToken = session.accessToken;
+      this.tokenCache.accessToken = session.accessToken;
       if (session.accessToken) {
-        await this.storage.saveAccessToken(session.accessToken);
+        await this.storage.saveTokenCache(this.tokenCache);
       }
       this.log.debug(
         {
@@ -769,35 +775,30 @@ export class Bot extends EventEmitter {
   }
 
   private setStoredAccessToken(session: LoginSession): void {
-    if (!isJwtUsable(this.accessToken, this.options.accessTokenRefreshSkewMs)) {
+    if (!isJwtUsable(this.tokenCache.accessToken, this.options.accessTokenRefreshSkewMs)) {
       return;
     }
 
     try {
-      session.accessToken = this.accessToken;
+      session.accessToken = this.tokenCache.accessToken;
     } catch (error) {
-      this.accessToken = null;
+      this.tokenCache .accessToken = null;
       this.log.warn({ err: error }, "Stored Steam access token was rejected");
-      // this.storage.deleteAccessToken().catch((deleteError) => {
-      //   this.log.warn({ err: deleteError }, "Failed to delete rejected Steam access token");
-      // });
+      this.storage.saveTokenCache(this.tokenCache).catch((deleteError) => {
+        this.log.warn({ err: deleteError }, "Failed to delete rejected Steam access token");
+      });
     }
   }
 
   private async captureSession(session: LoginSession, cookies: string[]): Promise<void> {
-    this.refreshToken = session.refreshToken;
-    this.accessToken = session.accessToken;
-    this.cookies = cookies;
+    this.tokenCache = {
+      refreshToken: session.refreshToken,
+      accessToken: session.accessToken,
+      sessionCookies: cookies,
+      updatedAt: Date.now()
+    };
 
-    if (session.refreshToken) {
-      await this.storage.saveRefreshToken(session.refreshToken);
-    }
-
-    if (session.accessToken) {
-      await this.storage.saveAccessToken(session.accessToken);
-    }
-
-    await this.storage.saveCookies(cookies);
+    await this.storage.saveTokenCache(this.tokenCache);
     await this.setCookies(cookies);
 
     this.log.info(
