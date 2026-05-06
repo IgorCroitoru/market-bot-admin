@@ -2,6 +2,7 @@ import dotenv from "dotenv";
 import { Bot } from "./Bot";
 import { loadBotOptionsFromEnv } from "./config";
 import { createBotStorageFromEnv } from "./storage";
+import { logger } from "./logger";
 
 dotenv.config();
 
@@ -22,17 +23,27 @@ async function main(): Promise<void> {
     })
   });
 
-  const shutdown = async (): Promise<void> => {
-    await bot.stop();
-    process.exit(0);
-  };
+  const shutdown = async (signal: NodeJS.Signals): Promise<void> => {
+    try {
+      logger.warn({ signal }, "Shutdown signal received");
 
-  process.once("SIGINT", () => {
-    void shutdown();
-  });
-  process.once("SIGTERM", () => {
-    void shutdown();
-  });
+      await bot.stop();
+
+      process.exitCode = 0;
+    } catch (err) {
+      logger.error({ err }, "Shutdown failed");
+
+      process.exitCode = 1;
+    }
+   };
+
+    process.once("SIGINT", () => {
+      void shutdown("SIGINT");
+    });
+
+    process.once("SIGTERM", () => {
+      void shutdown("SIGTERM");
+    });
 
   await bot.start();
 }
