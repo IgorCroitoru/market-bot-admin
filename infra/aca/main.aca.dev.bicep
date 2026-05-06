@@ -109,6 +109,11 @@ param acrName string
 @description('Github pipeline identity name. This identity will be granted permissions to push to ACR and optionally manage Container App.')
 param pipelineIdentityName string
 
+@description('Blob container name used by the bot. This container will be created in the storage account and used by AzureBotStorage.')
+param blobContainerName string
+
+@description('Bot storage name')
+param storageAccountName string
 module runtimeIdentity './user-assigned-identity.bicep' = {
   name: 'id-runtime-${uniqueString(resourceGroup().id, runtimeIdentityName)}'
   params: {
@@ -241,6 +246,21 @@ module pipelineCanUpdateContainerApp './aca-role-assignment.bicep' = {
     containerAppName: containerAppName
     principalId: githubIdentity.properties.principalId
     principalType: 'ServicePrincipal'
+  }
+}
+
+module botStorage './bot-storage.bicep' = {
+  name: 'bs-${uniqueString(resourceGroup().id, containerAppName)}'
+  dependsOn: [
+    containerApp
+  ]
+  params: {
+    storageAccountName: storageAccountName
+    blobContainerName: blobContainerName
+    location: location
+    tags: commonTags
+    runtimeIdentityId: runtimeIdentity.outputs.id
+    runtimeIdentityPrincipalId: runtimeIdentity.outputs.principalId
   }
 }
 

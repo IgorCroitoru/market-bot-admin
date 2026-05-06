@@ -20,6 +20,8 @@ param keyVaultName = 'kv-market-cloud-bot-dev'
 param logAnalyticsWorkspaceName = 'log-market-cloud-bot-dev'
 param containerAppsEnvironmentName = 'cae-market-cloud-bot-dev'
 param containerAppName = 'ca-market-cloud-bot-dev'
+param blobContainerName = 'steam-bot'
+param storageAccountName = 'stmarketbotclouddev001'
 
 param imageRepository = 'bot'
 param initialImageTag = 'bootstrap'
