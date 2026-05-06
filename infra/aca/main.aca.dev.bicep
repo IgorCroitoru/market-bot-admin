@@ -201,6 +201,7 @@ module containerApp './aca.bicep' = {
     keyVaultSecretsUserForRuntime
   ]
   params: {
+    runtimeIdentityClientId: runtimeIdentity.outputs.clientId
     blobContainerName: blobContainerName
     storageAccountName: storageAccountName
     containerAppName: containerAppName

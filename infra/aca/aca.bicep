@@ -7,6 +7,9 @@ param location string = resourceGroup().location
 @description('Container Apps managed environment resource ID.')
 param managedEnvironmentId string
 
+@description('Used by sdk to request tokens')
+param runtimeIdentityClientId string
+
 @description('Container image, for example myacr.azurecr.io/bot:bootstrap.')
 param image string
 
@@ -186,6 +189,10 @@ resource containerApp 'Microsoft.App/containerApps@2024-03-01' = {
             memory: memory
           }
           env: [
+            {
+              name: 'AZURE_CLIENT_ID'
+              value: runtimeIdentityClientId
+            }
             {
               name: 'BOT_ENV'
               value: botEnv

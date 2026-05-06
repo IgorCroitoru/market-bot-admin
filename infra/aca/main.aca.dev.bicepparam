@@ -15,6 +15,8 @@ param pipelineIdentityName = 'id-trading-bot-dev-github-acrpush'
 // param githubBranch = 'main'
 // param githubEnvironment = ''
 
+
+
 param runtimeIdentityName = 'id-market-cloud-bot-dev-runtime'
 param keyVaultName = 'kv-market-cloud-bot-dev'
 param logAnalyticsWorkspaceName = 'log-market-cloud-bot-dev'
