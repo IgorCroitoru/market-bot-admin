@@ -126,6 +126,8 @@ export class Bot extends EventEmitter {
       | "accessTokenRefreshSkewMs"
       | "refreshTokenRenewalWindowMs"
       | "tokenPlatform"
+      | "steamGuardTokenSubmitAttempts"
+      | "steamGuardTokenSubmitDelayMs"
     >
   > &
     BotOptions;
@@ -152,7 +154,7 @@ export class Bot extends EventEmitter {
       cancelTimeMs: 10 * 60_000,
       loginTimeoutMs: 90_000,
       maxLoginRetries: 3,
-      loginRetryDelayMs: 5_000,
+      loginRetryDelayMs: 30_000,
       maxLoginAttemptsWithinPeriod: 3,
       loginAttemptPeriodMs: 60_000,
       offerRequestTtlMs: 5 * 60_000,
@@ -163,6 +165,8 @@ export class Bot extends EventEmitter {
       tokenRefreshSkewMs: 2 * 60_000,
       accessTokenRefreshSkewMs: 4 * 60 * 60_000,
       refreshTokenRenewalWindowMs: 7 * 24 * 60 * 60_000,
+      steamGuardTokenSubmitAttempts: 3,
+      steamGuardTokenSubmitDelayMs: 1500,
       tokenPlatform: "mobile",
       ...options
     };
@@ -584,8 +588,8 @@ export class Bot extends EventEmitter {
         "Restored valid Steam access token from storage"
       );
     } else if (accessToken) {
-      await this.storage.deleteAccessToken();
-      this.log.info("Deleted expired or nearly expired Steam access token");
+      // await this.storage.deleteAccessToken();
+      this.log.info("Access token in storage is expired or expiring soon; ignoring");
     }
 
     if (pollData) {
@@ -615,7 +619,7 @@ export class Bot extends EventEmitter {
             this.log.warn({ err: error }, "Refresh-token login failed");
 
             if (!isRetriableError(error)) {
-              await this.storage.deleteRefreshToken();
+              // await this.storage.deleteRefreshToken();
               this.refreshToken = null;
             } else {
               throw error;
@@ -673,7 +677,15 @@ export class Bot extends EventEmitter {
     })) as StartSessionResponse;
 
     if (startResult.actionRequired) {
-      await this.handleSteamGuard(session, startResult);
+      await withRetries(
+        () => this.handleSteamGuard(session, startResult),
+        {
+          attempts: this.options.steamGuardTokenSubmitAttempts,
+          delayMs: this.options.steamGuardTokenSubmitDelayMs,
+          logger: this.log,
+          shouldRetry: isRetriableError
+        }
+      );
     }
 
     await authenticated;
@@ -766,9 +778,9 @@ export class Bot extends EventEmitter {
     } catch (error) {
       this.accessToken = null;
       this.log.warn({ err: error }, "Stored Steam access token was rejected");
-      this.storage.deleteAccessToken().catch((deleteError) => {
-        this.log.warn({ err: deleteError }, "Failed to delete rejected Steam access token");
-      });
+      // this.storage.deleteAccessToken().catch((deleteError) => {
+      //   this.log.warn({ err: deleteError }, "Failed to delete rejected Steam access token");
+      // });
     }
   }
 

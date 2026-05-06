@@ -17,6 +17,8 @@ export interface BotOptions {
   loginRetryDelayMs?: number;
   maxLoginAttemptsWithinPeriod?: number;
   loginAttemptPeriodMs?: number;
+  steamGuardTokenSubmitDelayMs?: number;
+  steamGuardTokenSubmitAttempts?: number;
   offerRequestTtlMs?: number;
   offerMaxRetries?: number;
   offerRetryBaseDelayMs?: number;

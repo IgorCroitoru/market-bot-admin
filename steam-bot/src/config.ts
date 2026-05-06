@@ -31,7 +31,7 @@ const envSchema = z.object({
   BOT_CANCEL_TIME_MS: numberFromEnv(10 * 60_000),
   BOT_LOGIN_TIMEOUT_MS: numberFromEnv(90_000),
   BOT_MAX_LOGIN_RETRIES: numberFromEnv(3),
-  BOT_LOGIN_RETRY_DELAY_MS: numberFromEnv(5_000),
+  BOT_LOGIN_RETRY_DELAY_MS: numberFromEnv(30_000),
   BOT_MAX_LOGIN_ATTEMPTS_WITHIN_PERIOD: numberFromEnv(3),
   BOT_LOGIN_ATTEMPT_PERIOD_MS: numberFromEnv(60_000),
   BOT_OFFER_REQUEST_TTL_MS: numberFromEnv(5 * 60_000),

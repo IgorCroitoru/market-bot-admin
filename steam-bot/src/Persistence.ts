@@ -9,11 +9,11 @@ export interface BotPersistence {
 
   saveRefreshToken(token: string): Promise<void>;
   loadRefreshToken(): Promise<string | null>;
-  deleteRefreshToken(): Promise<void>;
+  // deleteRefreshToken(): Promise<void>;
 
   saveAccessToken(token: string): Promise<void>;
   loadAccessToken(): Promise<string | null>;
-  deleteAccessToken(): Promise<void>;
+  // deleteAccessToken(): Promise<void>;
 
   saveCookies(cookies: string[]): Promise<void>;
   loadCookies(): Promise<string[] | null>;
