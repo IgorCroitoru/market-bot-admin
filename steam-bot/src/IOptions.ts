@@ -10,6 +10,7 @@ export interface BotOptions {
   steamGuardCode?: string;
   domain?: string;
   language?: string;
+  inventoryPollIntervalMs?: number;
   pollIntervalMs?: number;
   cancelTimeMs?: number;
   loginTimeoutMs?: number;

@@ -3,6 +3,7 @@ import { SecretClient } from "@azure/keyvault-secrets";
 import { BlobServiceClient, type ContainerClient } from "@azure/storage-blob";
 import type { BotStorage } from "../Persistence";
 import type { PollData } from "../PollData";
+import { BotInventorySnapshot } from "../Bot";
 
 export interface AzureBotStorageOptions {
   accountName: string;
@@ -36,6 +37,12 @@ export class AzureBotStorage implements BotStorage {
     this.container = blobServiceClient.getContainerClient(
       options.containerName ?? "steam-bot"
     );
+  }
+  async saveInventorySnapshot(snapshot: BotInventorySnapshot): Promise<void> {
+    await this.saveData("inventory-snapshot", snapshot);
+  }
+  async loadInventorySnapshot(): Promise<BotInventorySnapshot | null> {
+    return this.loadData<BotInventorySnapshot>("inventory-snapshot");
   }
 
   async savePollData(pollData: PollData): Promise<void> {

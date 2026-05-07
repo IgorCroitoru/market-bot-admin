@@ -14,6 +14,32 @@ const numberFromEnv = (defaultValue: number) =>
     return value;
   }, z.number().int().nonnegative());
 
+const optionalNumberFromEnv = () =>
+  z.preprocess((value) => {
+    if (value === undefined || value === null || value === "") {
+      return undefined;
+    }
+
+    if (typeof value === "string") {
+      return Number(value);
+    }
+
+    return value;
+  }, z.number().int().positive().optional());
+
+const booleanFromEnv = (defaultValue: boolean) =>
+  z.preprocess((value) => {
+    if (value === undefined || value === null || value === "") {
+      return defaultValue;
+    }
+
+    if (typeof value === "string") {
+      return /^(1|true|yes|on)$/i.test(value);
+    }
+
+    return Boolean(value);
+  }, z.boolean());
+
 const envSchema = z.object({
   BOT_ENV: z.enum(["dev", "prod", "test"]).default("dev"),
   LOG_LEVEL: z
@@ -26,6 +52,7 @@ const envSchema = z.object({
   STEAM_GUARD_CODE: z.string().optional(),
   STEAM_API_DOMAIN: z.string().default("localhost"),
   STEAM_TOKEN_PLATFORM: z.enum(["mobile", "web", "client"]).default("mobile"),
+  BOT_INVENTORY_POLL_INTERVAL_MS: numberFromEnv(12 * 60 * 60_000),
 
   BOT_POLL_INTERVAL_MS: numberFromEnv(30_000),
   BOT_CANCEL_TIME_MS: numberFromEnv(10 * 60_000),
@@ -59,6 +86,7 @@ export function loadBotOptionsFromEnv(env: NodeJS.ProcessEnv = process.env): Bot
     sharedSecret: config.STEAM_SHARED_SECRET,
     steamGuardCode: config.STEAM_GUARD_CODE,
     domain: config.STEAM_API_DOMAIN,
+    inventoryPollIntervalMs: config.BOT_INVENTORY_POLL_INTERVAL_MS,
     pollIntervalMs: config.BOT_POLL_INTERVAL_MS,
     cancelTimeMs: config.BOT_CANCEL_TIME_MS,
     loginTimeoutMs: config.BOT_LOGIN_TIMEOUT_MS,

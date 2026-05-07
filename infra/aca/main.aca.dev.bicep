@@ -91,6 +91,9 @@ param botAccessTokenRefreshSkewMs string
 @description('Refresh token renewal window in milliseconds.')
 param botRefreshTokenRenewalWindowMs string
 
+@description('Bot inventory poll interval in milliseconds.')
+param botInventoryPollIntervalMs string
+
 @description('Bot storage driver.')
 param storageDriver string
 
@@ -206,6 +209,7 @@ module containerApp './aca.bicep' = {
     storageAccountName: storageAccountName
     containerAppName: containerAppName
     storageDriver: storageDriver
+    botInventoryPollIntervalMs: botInventoryPollIntervalMs
     location: location
     managedEnvironmentId: containerAppsEnvironment.outputs.id
     image: selectedImage

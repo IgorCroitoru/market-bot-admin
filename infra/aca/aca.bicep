@@ -87,6 +87,9 @@ param botMaxLoginAttemptsWithinPeriod string
 @description('Login attempt period in milliseconds.')
 param botLoginAttemptPeriodMs string 
 
+@description('Bot inventory poll interval in milliseconds.')
+param botInventoryPollIntervalMs string
+
 @description('Offer request TTL in milliseconds.')
 param botOfferRequestTtlMs string 
 
@@ -260,6 +263,10 @@ resource containerApp 'Microsoft.App/containerApps@2024-03-01' = {
             {
               name: 'BOT_MAX_LOGIN_ATTEMPTS_WITHIN_PERIOD'
               value: botMaxLoginAttemptsWithinPeriod
+            }
+            {
+              name: 'BOT_INVENTORY_POLL_INTERVAL_MS'
+              value: botInventoryPollIntervalMs
             }
             {
               name: 'BOT_LOGIN_ATTEMPT_PERIOD_MS'

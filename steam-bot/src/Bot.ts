@@ -18,6 +18,7 @@ import { isRetriableError, withRetries, delay } from "./retry";
 import { logger as defaultLogger } from "./logger";
 import { createBotStorageFromEnv } from "./storage";
 import { TokenCache } from "./storage/AzureBotStorage";
+import CEconItem from "steamcommunity/classes/CEconItem";
 
 export type BotStatus =
   | "idle"
@@ -27,12 +28,32 @@ export type BotStatus =
   | "stopped"
   | "error";
 
+export interface BotHealthError {
+  name: string;
+  message: string;
+  context: string;
+  at: number;
+  code?: string;
+  cause?: string;
+  stack?: string;
+}
+
+export interface BotHealthSnapshot {
+  status: BotStatus;
+  ready: boolean;
+  queueSize: number;
+  processingQueue: boolean;
+  lastError: BotHealthError | null;
+  lastErrors: BotHealthError[];
+  updatedAt: number;
+}
+
 export interface TradeItem {
   appid: number;
   contextid: string | number;
-  assetid?: string;
+  assetid: string | number;
   id?: string;
-  amount?: number;
+  amount: number;
   [key: string]: unknown;
 }
 
@@ -52,6 +73,11 @@ export interface SentTradeOffer {
   offer: TradeOffer;
   offerId: string | undefined;
   status: "pending" | "sent";
+}
+
+export interface BotInventorySnapshot {
+  fetchedAt: number;
+  inventory: CEconItem[];
 }
 
 type GuardAction = {
@@ -100,6 +126,26 @@ const permanentTradeOfferCauses = new Set([
 
 const retriableTradeOfferCauses = new Set(["ItemServerUnavailable"]);
 
+export interface BotHealthError {
+  name: string;
+  message: string;
+  context: string;
+  at: number;
+  code?: string;
+  cause?: string;
+  stack?: string;
+}
+
+export interface BotHealthSnapshot {
+  status: BotStatus;
+  ready: boolean;
+  queueSize: number;
+  processingQueue: boolean;
+  lastError: BotHealthError | null;
+  lastErrors: BotHealthError[];
+  updatedAt: number;
+}
+
 export class Bot extends EventEmitter {
   public readonly community: SteamCommunity;
   public readonly tradeManager: TradeOfferManager;
@@ -126,6 +172,7 @@ export class Bot extends EventEmitter {
       | "tokenRefreshSkewMs"
       | "accessTokenRefreshSkewMs"
       | "refreshTokenRenewalWindowMs"
+      | "inventoryPollIntervalMs"
       | "tokenPlatform"
       | "steamGuardTokenSubmitAttempts"
       | "steamGuardTokenSubmitDelayMs"
@@ -135,7 +182,12 @@ export class Bot extends EventEmitter {
 
   private status: BotStatus = "idle";
   private ready = false;
-  private tokenCache: TokenCache = {
+  private healthUpdatedAt = Date.now();
+  private lastErrors: BotHealthError[] = [];
+  private readonly maxHealthErrors = 5;
+  private steamId64: string | null = null;
+  private inventoryCache: BotInventorySnapshot | null = null;
+  private _tokenCache: TokenCache = {
     refreshToken: null,
     accessToken: null,
     sessionCookies: null,
@@ -145,6 +197,8 @@ export class Bot extends EventEmitter {
   // private accessToken: string | null = null;
   // private cookies: string[] | null = null;
   private tokenRefreshTimer: NodeJS.Timeout | null = null;
+  private inventoryRefreshTimer: NodeJS.Timeout | null = null;
+  private inventoryRefreshInFlight: Promise<void> | null = null;
   private loginAttempts: number[] = [];
   private tradeOfferQueue: TradeOfferQueueItem[] = [];
   private processingTradeOfferQueue = false;
@@ -172,6 +226,7 @@ export class Bot extends EventEmitter {
       tokenRefreshSkewMs: 2 * 60_000,
       accessTokenRefreshSkewMs: 4 * 60 * 60_000,
       refreshTokenRenewalWindowMs: 7 * 24 * 60 * 60_000,
+      inventoryPollIntervalMs: 12* 60 * 60_000,
       steamGuardTokenSubmitAttempts: 3,
       steamGuardTokenSubmitDelayMs: 1500,
       tokenPlatform: "mobile",
@@ -205,6 +260,37 @@ export class Bot extends EventEmitter {
     return this.status;
   }
 
+  getInventoryCache(): BotInventorySnapshot | null {
+    return this.inventoryCache;
+  }
+
+  private async updateInventoryCache(inventory: BotInventorySnapshot): Promise<void> {
+    this.inventoryCache = inventory;
+    await this.storage.saveInventorySnapshot(inventory).catch((error) => {
+      this.log.warn({ err: error }, "Failed to save inventory snapshot to storage");
+    });
+  }
+  private async updateTokenCache(patch: Partial<TokenCache>): Promise<void> {
+    this._tokenCache = {
+      ...this._tokenCache,
+      ...patch
+    };
+    await this.storage.saveTokenCache(this._tokenCache).catch((error) => {
+      this.log.warn({ err: error }, "Failed to save token cache to storage");
+    });
+  }
+  getHealth(): BotHealthSnapshot {
+    return {
+      status: this.status,
+      ready: this.ready,
+      queueSize: this.tradeOfferQueue.length,
+      processingQueue: this.processingTradeOfferQueue,
+      lastError: this.lastErrors[0] ?? null,
+      lastErrors: [...this.lastErrors],
+      updatedAt: this.healthUpdatedAt
+    };
+  }
+
   async start(): Promise<void> {
     if (this.ready || this.status === "authenticating") {
       this.log.warn("Steam bot is already starting or ready");
@@ -214,28 +300,43 @@ export class Bot extends EventEmitter {
     this.bindEventHandlers();
     this.setStatus("authenticating");
 
-    await this.restoreState();
-    await this.login();
+    try {
+      await this.restoreState();
+      await this.login();
 
-    this.tradeManager.pollInterval = this.options.pollIntervalMs;
-    this.tradeManager.doPoll();
-    this.startTokenRefreshLoop();
-    this.ready = true;
-    this.setStatus("ready");
-    this.emit("ready", true);
-    this.log.info(
-      {
-        accountName: this.options.accountName,
-        pollIntervalMs: this.options.pollIntervalMs
-      },
-      "Steam bot is ready"
-    );
+      this.tradeManager.pollInterval = this.options.pollIntervalMs;
+      this.tradeManager.doPoll();
+      this.startTokenRefreshLoop();
+      this.startInventoryRefreshLoop();
+      this.ready = true;
+      this.setStatus("ready");
+      this.emit("ready", true);
+      this.log.info(
+        {
+          accountName: this.options.accountName,
+          pollIntervalMs: this.options.pollIntervalMs
+        },
+        "Steam bot is ready"
+      );
+      void this.refreshInventoryCache("startup");
+      // Resume processing any queued trade offers now that the bot is ready.
+      this.processTradeOfferQueue();
+    } catch (error) {
+      this.recordHealthError(error, "start");
+      this.setStatus("error");
+      throw error;
+    }
   }
 
   async stop(): Promise<void> {
     if (this.tokenRefreshTimer) {
       clearInterval(this.tokenRefreshTimer);
       this.tokenRefreshTimer = null;
+    }
+
+    if (this.inventoryRefreshTimer) {
+      clearInterval(this.inventoryRefreshTimer);
+      this.inventoryRefreshTimer = null;
     }
 
     this.tradeManager.pollInterval = -1;
@@ -255,8 +356,17 @@ export class Bot extends EventEmitter {
     return this.sessionRefreshInFlight;
   }
 
+  async refreshInventoryCache(reason = "scheduled inventory check"): Promise<void> {
+    this.inventoryRefreshInFlight ??= this.doRefreshInventoryCache(reason).finally(() => {
+      this.inventoryRefreshInFlight = null;
+    });
+
+    return this.inventoryRefreshInFlight;
+  }
+
   async sendTradeOffer(request: SendTradeOfferRequest): Promise<SentTradeOffer> {
-    this.assertReady();
+    // Always accept trade offer requests and enqueue them.
+    // Processing will only run when the bot is ready.
 
     const createdAtMs = normalizeRequestTimestamp(
       request.createdAt ?? request.timestamp ?? Date.now()
@@ -288,7 +398,11 @@ export class Bot extends EventEmitter {
         "Trade offer queued"
       );
 
-      this.processTradeOfferQueue();
+      if (this.ready) {
+        this.processTradeOfferQueue();
+      } else {
+        this.log.debug({ queueLength: this.tradeOfferQueue.length }, "Bot not ready; trade offer queued for later processing");
+      }
     });
   }
 
@@ -310,6 +424,8 @@ export class Bot extends EventEmitter {
 
   private async drainTradeOfferQueue(): Promise<void> {
     while (this.tradeOfferQueue.length > 0) {
+      await this.waitForProcessingReady();
+
       const item = this.tradeOfferQueue.shift();
 
       if (!item) {
@@ -347,6 +463,7 @@ export class Bot extends EventEmitter {
         const decision = this.getTradeOfferRetryDecision(tradeError, item);
 
         if (!decision.retry) {
+          this.recordHealthError(tradeError, "trade offer send failed");
           this.log.warn(
             {
               err: tradeError,
@@ -383,41 +500,74 @@ export class Bot extends EventEmitter {
 
   private sendTradeOfferOnce(request: SendTradeOfferRequest): Promise<SentTradeOffer> {
     return new Promise<SentTradeOffer>((resolve, reject) => {
-      const offer = this.tradeManager.createOffer(request.partner, request.token);
-
-      if (request.itemsToGive?.length) {
-        offer.addMyItems(request.itemsToGive as never[]);
-      }
-
-    //   if (request.itemsToReceive?.length) {
-    //     offer.addTheirItems(request.itemsToReceive as never[]);
-    //   }
-
-      if (request.message !== undefined) {
-        offer.setMessage(request.message);
-      }
-
-      for (const [key, value] of Object.entries(request.data ?? {})) {
-        offer.data(key, value);
-      }
-
-      offer.send((error, status) => {
-        if (error) {
-          reject(error);
-          return;
+      try {
+        if (!request.itemsToGive || request.itemsToGive.length === 0) {
+          throw new Error(
+            "Broken trade request: At least one item to give is required to send a trade offer"
+          );
         }
 
-        this.log.info(
-          {
-            requestId: request.requestId,
-            offerId: offer.id,
-            partner: request.partner,
-            status
-          },
-          "Trade offer sent"
-        );
-        resolve({ offer, offerId: offer.id, status });
-      });
+        if (!this.inventoryCache) {
+          throw new Error("Inventory cache is not initialized");
+        }
+
+        const inventory = this.inventoryCache.inventory;
+
+        const itemsToGive = request.itemsToGive.map((requestedItem: TradeItem) => {
+          const inventoryItem = inventory.find(
+            (item) => item.assetid === requestedItem.assetid
+          );
+
+          if (!inventoryItem) {
+            throw new Error(
+              `Inventory item not found: assetid=${requestedItem.assetid}`
+            );
+          }
+
+          if (inventoryItem.amount < requestedItem.amount) {
+            throw new Error(
+              `Not enough amount for assetid=${requestedItem.assetid}. Requested ${requestedItem.amount}, available ${inventoryItem.amount}`
+            );
+          }
+
+          const reconstructedItem = new CEconItem(inventoryItem, inventoryItem.descriptions, inventoryItem.contextid);
+          reconstructedItem.amount = requestedItem.amount; // Override amount with requested amount for the trade offer.
+          return reconstructedItem
+        });
+
+        const offer = this.tradeManager.createOffer(request.partner, request.token);
+
+        offer.addMyItems(itemsToGive);
+
+        if (request.message !== undefined) {
+          offer.setMessage(request.message);
+        }
+
+        for (const [key, value] of Object.entries(request.data ?? {})) {
+          offer.data(key, value);
+        }
+
+        offer.send((error, status) => {
+          if (error) {
+            reject(error);
+            return;
+          }
+
+          this.log.info(
+            {
+              requestId: request.requestId,
+              offerId: offer.id,
+              partner: request.partner,
+              status
+            },
+            "Trade offer sent"
+          );
+
+          resolve({ offer, offerId: offer.id, status });
+        });
+      } catch (error) {
+        reject(error);
+      }
     });
   }
 
@@ -511,6 +661,72 @@ export class Bot extends EventEmitter {
     }
   }
 
+  private startInventoryRefreshLoop(): void {
+    if (this.inventoryRefreshTimer) {
+      clearInterval(this.inventoryRefreshTimer);
+    }
+
+    this.inventoryRefreshTimer = setInterval(() => {
+      void this.refreshInventoryCache("scheduled inventory check");
+    }, this.options.inventoryPollIntervalMs);
+
+    this.inventoryRefreshTimer.unref?.();
+  }
+
+  private async doRefreshInventoryCache(reason: string): Promise<void> {
+    if (!this.ready || this.status === "stopped") {
+      return;
+    }
+
+    // If the inventory was refreshed recently, skip this refresh to avoid unnecessary load.
+    if(
+      this.inventoryCache?.fetchedAt 
+      && this.inventoryCache.inventory.length > 0 
+      && Date.now() - this.inventoryCache.fetchedAt < this.options.inventoryPollIntervalMs) {
+      this.log.info(
+        {
+          reason,
+          inventoryCount: this.inventoryCache.inventory.length,
+          fetchedAt: new Date(this.inventoryCache.fetchedAt).toISOString()
+        },
+        "Skipping inventory refresh because cache is still fresh"
+      );
+      return
+    }
+
+    const snapshot = await this.fetchInventorySnapshot();
+    await this.updateInventoryCache(snapshot);
+
+    this.log.info(
+      {
+        reason,
+        inventoryCount: snapshot.inventory.length,
+      },
+      "Steam inventory cache refreshed"
+    );
+
+    this.emit("inventoryUpdated", snapshot);
+  }
+
+  private async fetchInventorySnapshot(): Promise<BotInventorySnapshot> {
+    const [inventory] = await new Promise<[
+      CEconItem[]
+    ]>((resolve, reject) => {
+      this.tradeManager.getInventoryContents(730, 2, false, (error, items) => {
+        if (error) {
+          reject(error);
+          return;
+        }
+        resolve([items]);
+      });
+    });
+
+    return {
+      fetchedAt: Date.now(),
+      inventory,
+    };
+  }
+
 //   async acceptOffer(offerId: string, skipStateUpdate = false): Promise<"pending" | "accepted" | "escrow"> {
 //     this.assertReady();
 //     const offer = await this.getOffer(offerId);
@@ -577,16 +793,17 @@ export class Bot extends EventEmitter {
   }
 
   private async restoreState(): Promise<void> {
-    const [loginAttempts, pollData, tokenCache] = await Promise.all([
+    const [loginAttempts, pollData, tokenCache, inventorySnapshot] = await Promise.all([
       this.storage.loadLoginAttempts(),
       this.storage.loadPollData(),
-      this.storage.loadTokenCache()
+      this.storage.loadTokenCache(),
+      this.storage.loadInventorySnapshot()
     ]);
 
     this.loginAttempts = this.normalizeLoginAttempts(loginAttempts ?? []);
 
     if (tokenCache) {
-      this.tokenCache = tokenCache
+      this._tokenCache = tokenCache
       if(isJwtUsable(tokenCache.accessToken, this.options.accessTokenRefreshSkewMs))
       {
         this.log.info(
@@ -610,6 +827,44 @@ export class Bot extends EventEmitter {
       this.tradeManager.pollData = pollData;
       this.log.info("Restored trade poll data");
     }
+
+    if (inventorySnapshot) {
+      this.log.info(
+        {
+          inventoryCount: inventorySnapshot.inventory.length,
+          fetchedAt: new Date(inventorySnapshot.fetchedAt).toISOString()
+        },
+        "Restored inventory snapshot"
+      );
+    }
+  }
+
+  private recordHealthError(error: unknown, context: string): void {
+    const snapshot = this.toHealthError(error, context);
+    this.lastErrors = [snapshot, ...this.lastErrors].slice(0, this.maxHealthErrors);
+    this.healthUpdatedAt = snapshot.at;
+  }
+
+  private toHealthError(error: unknown, context: string): BotHealthError {
+    const errorLike = error as Error & { code?: unknown; cause?: unknown };
+    const cause = errorLike?.cause;
+
+    return {
+      name: errorLike?.name ?? "Error",
+      message: errorLike?.message ?? String(error),
+      context,
+      at: Date.now(),
+      code: typeof errorLike?.code === "string" ? errorLike.code : undefined,
+      cause:
+        typeof cause === "string"
+          ? cause
+          : cause instanceof Error
+            ? cause.message
+            : cause !== undefined
+              ? String(cause)
+              : undefined,
+      stack: errorLike?.stack
+    };
   }
 
   private async login(): Promise<void> {
@@ -617,16 +872,15 @@ export class Bot extends EventEmitter {
       async () => {
         await this.waitForLoginSlot();
 
-        if (isJwtUsable(this.tokenCache?.refreshToken, this.options.tokenRefreshSkewMs)) {
+        if (isJwtUsable(this._tokenCache.refreshToken, this.options.tokenRefreshSkewMs)) {
           try {
-            await this.loginWithRefreshToken(this.tokenCache.refreshToken);
+            await this.loginWithRefreshToken(this._tokenCache.refreshToken);
             return;
           } catch (error) {
             this.log.warn({ err: error }, "Refresh-token login failed");
 
             if (!isRetriableError(error)) {
-              this.tokenCache.refreshToken = null;
-              await this.storage.saveTokenCache(this.tokenCache);
+              await this.updateTokenCache({ refreshToken: null });
             } else {
               throw error;
             }
@@ -704,7 +958,7 @@ export class Bot extends EventEmitter {
       return;
     }
 
-    const refreshToken = this.tokenCache?.refreshToken ?? (await this.storage.loadTokenCache())?.refreshToken;
+    const refreshToken = this._tokenCache.refreshToken ?? (await this.storage.loadTokenCache())?.refreshToken;
 
     if (!isJwtUsable(refreshToken, this.options.tokenRefreshSkewMs)) {
       this.log.warn({ reason }, "Refresh token is missing or expiring; performing full login");
@@ -713,8 +967,8 @@ export class Bot extends EventEmitter {
     }
 
     if (
-      this.areCookiesUsable(this.tokenCache?.sessionCookies) &&
-      isJwtUsable(this.tokenCache?.accessToken, this.options.accessTokenRefreshSkewMs) &&
+      this.areCookiesUsable(this._tokenCache.sessionCookies) &&
+      isJwtUsable(this._tokenCache.accessToken, this.options.accessTokenRefreshSkewMs) &&
       !isJwtExpiringWithin(refreshToken, this.options.refreshTokenRenewalWindowMs)
     ) {
       return;
@@ -742,8 +996,7 @@ export class Bot extends EventEmitter {
       const renewed = await session.renewRefreshToken();
 
       if (renewed && session.refreshToken) {
-        this.tokenCache.refreshToken = session.refreshToken;
-        await this.storage.saveTokenCache(this.tokenCache);
+        await this.updateTokenCache({ refreshToken: session.refreshToken });
         this.log.info(
           {
             refreshTokenExpiresAt: getJwtExpirationDate(session.refreshToken)?.toISOString()
@@ -752,19 +1005,13 @@ export class Bot extends EventEmitter {
         );
       }
 
-      this.tokenCache.accessToken = session.accessToken;
-      if (session.accessToken) {
-        await this.storage.saveTokenCache(this.tokenCache);
-      }
+      await this.updateTokenCache({ accessToken: session.accessToken });
       return;
     }
 
-    if (!isJwtUsable(this.tokenCache.accessToken, this.options.accessTokenRefreshSkewMs)) {
+    if (!isJwtUsable(this._tokenCache.accessToken, this.options.accessTokenRefreshSkewMs)) {
       await session.refreshAccessToken();
-      this.tokenCache.accessToken = session.accessToken;
-      if (session.accessToken) {
-        await this.storage.saveTokenCache(this.tokenCache);
-      }
+      await this.updateTokenCache({ accessToken: session.accessToken });
       this.log.debug(
         {
           accessTokenExpiresAt: getJwtExpirationDate(session.accessToken)?.toISOString()
@@ -775,30 +1022,28 @@ export class Bot extends EventEmitter {
   }
 
   private setStoredAccessToken(session: LoginSession): void {
-    if (!isJwtUsable(this.tokenCache.accessToken, this.options.accessTokenRefreshSkewMs)) {
+    if (!isJwtUsable(this._tokenCache.accessToken, this.options.accessTokenRefreshSkewMs)) {
       return;
     }
 
     try {
-      session.accessToken = this.tokenCache.accessToken;
+      session.accessToken = this._tokenCache.accessToken;
     } catch (error) {
-      this.tokenCache .accessToken = null;
       this.log.warn({ err: error }, "Stored Steam access token was rejected");
-      this.storage.saveTokenCache(this.tokenCache).catch((deleteError) => {
-        this.log.warn({ err: deleteError }, "Failed to delete rejected Steam access token");
-      });
+      this.updateTokenCache({ accessToken: null })
     }
   }
 
   private async captureSession(session: LoginSession, cookies: string[]): Promise<void> {
-    this.tokenCache = {
+    this.steamId64 = session.steamID?.getSteamID64?.() ?? this.steamId64;
+    const tokenCacheUpdate = {
       refreshToken: session.refreshToken,
       accessToken: session.accessToken,
       sessionCookies: cookies,
       updatedAt: Date.now()
     };
 
-    await this.storage.saveTokenCache(this.tokenCache);
+    await this.updateTokenCache(tokenCacheUpdate);
     await this.setCookies(cookies);
 
     this.log.info(
@@ -946,6 +1191,7 @@ export class Bot extends EventEmitter {
     this.tradeManager.on("sessionExpired", (error) => {
       this.log.warn({ err: error }, "Steam trade session expired");
       this.ensureFreshSession("trade manager session expired").catch((err) => {
+        this.recordHealthError(err, "trade manager session expired");
         this.setStatus("error");
         this.log.error({ err }, "Failed to refresh expired Steam trade session");
       });
@@ -975,6 +1221,7 @@ export class Bot extends EventEmitter {
 
     this.tokenRefreshTimer = setInterval(() => {
       this.ensureFreshSession("scheduled token refresh").catch((error) => {
+        this.recordHealthError(error, "scheduled token refresh");
         this.setStatus("error");
         this.log.error({ err: error }, "Scheduled Steam token refresh failed");
       });
@@ -1034,6 +1281,26 @@ export class Bot extends EventEmitter {
     if (!this.ready) {
       throw new Error("Steam bot is not ready");
     }
+  }
+
+  private async waitForProcessingReady(): Promise<void> {
+    if (this.ready) {
+      return;
+    }
+
+    await new Promise<void>((resolve, reject) => {
+      const cleanup = (): void => {
+        this.removeListener("ready", onReady);
+      };
+
+      const onReady = (isReady: boolean): void => {
+        if (isReady) {
+          cleanup();
+          resolve();
+        }
+      };
+      this.on("ready", onReady);
+    });
   }
 
   private setStatus(status: BotStatus): void {

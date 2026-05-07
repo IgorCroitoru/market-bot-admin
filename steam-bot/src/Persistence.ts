@@ -1,3 +1,4 @@
+import { BotInventorySnapshot } from "./Bot";
 import type { PollData } from "./PollData";
 import { TokenCache } from "./storage/AzureBotStorage";
 
@@ -10,16 +11,9 @@ export interface BotPersistence {
 
   saveTokenCache(tokenCache: TokenCache): Promise<void>;
   loadTokenCache(): Promise<TokenCache | null>;
-  // saveRefreshToken(token: string): Promise<void>;
-  // loadRefreshToken(): Promise<string | null>;
-  // deleteRefreshToken(): Promise<void>;
 
-  // saveAccessToken(token: string): Promise<void>;
-  // loadAccessToken(): Promise<string | null>;
-  // deleteAccessToken(): Promise<void>;
-
-  // saveCookies(cookies: string[]): Promise<void>;
-  // loadCookies(): Promise<string[] | null>;
+  saveInventorySnapshot(snapshot: BotInventorySnapshot): Promise<void>;
+  loadInventorySnapshot(): Promise<BotInventorySnapshot | null>;
 
   saveLoginAttempts(attempts: number[]): Promise<void>;
   loadLoginAttempts(): Promise<number[] | null>;

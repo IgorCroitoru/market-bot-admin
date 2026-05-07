@@ -6,7 +6,16 @@ import { logger } from "./logger";
 
 dotenv.config();
 
-export { Bot, type BotStatus, type SendTradeOfferRequest, type SentTradeOffer, type TradeItem } from "./Bot";
+export {
+  Bot,
+  type BotHealthError,
+  type BotInventorySnapshot,
+  type BotHealthSnapshot,
+  type BotStatus,
+  type SendTradeOfferRequest,
+  type SentTradeOffer,
+  type TradeItem
+} from "./Bot";
 export { loadBotConfigFromEnv, loadBotOptionsFromEnv, type BotRuntimeConfig } from "./config";
 export { isRetriableError, withRetries } from "./retry";
 export { LocalBotStorage, AzureBotStorage, createBotStorageFromEnv } from "./storage";

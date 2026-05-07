@@ -3,6 +3,7 @@ import path from "node:path";
 import type { BotStorage } from "../Persistence";
 import type { PollData } from "../PollData";
 import { TokenCache } from "./AzureBotStorage";
+import { BotInventorySnapshot } from "../Bot";
 
 export interface LocalBotStorageOptions {
   accountName: string;
@@ -19,6 +20,13 @@ export class LocalBotStorage implements BotStorage {
 
     this.dataDir = path.join(rootDir, accountDir, "data");
     this.secretsDir = path.join(rootDir, accountDir, "secrets");
+  }
+  async saveInventorySnapshot(snapshot: BotInventorySnapshot): Promise<void> {
+    await this.saveData("inventory-snapshot", snapshot);
+
+  }
+  async loadInventorySnapshot(): Promise<BotInventorySnapshot | null> {
+    return this.loadData<BotInventorySnapshot>("inventory-snapshot");
   }
   async saveTokenCache(tokenCache: TokenCache): Promise<void> {
     await this.saveData("token-cache", tokenCache);
