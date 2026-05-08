@@ -125,6 +125,7 @@ const permanentTradeOfferCauses = new Set([
 ]);
 
 const retriableTradeOfferCauses = new Set(["ItemServerUnavailable"]);
+const inventoryRefreshCheckIntervalMs = 10 * 60_000;
 
 export interface BotHealthError {
   name: string;
@@ -226,7 +227,7 @@ export class Bot extends EventEmitter {
       tokenRefreshSkewMs: 2 * 60_000,
       accessTokenRefreshSkewMs: 4 * 60 * 60_000,
       refreshTokenRenewalWindowMs: 7 * 24 * 60 * 60_000,
-      inventoryPollIntervalMs: 12* 60 * 60_000,
+      inventoryPollIntervalMs: 10 * 60_000,
       steamGuardTokenSubmitAttempts: 3,
       steamGuardTokenSubmitDelayMs: 1500,
       tokenPlatform: "mobile",
@@ -668,7 +669,7 @@ export class Bot extends EventEmitter {
 
     this.inventoryRefreshTimer = setInterval(() => {
       void this.refreshInventoryCache("scheduled inventory check");
-    }, this.options.inventoryPollIntervalMs);
+    }, inventoryRefreshCheckIntervalMs);
 
     this.inventoryRefreshTimer.unref?.();
   }
@@ -678,20 +679,18 @@ export class Bot extends EventEmitter {
       return;
     }
 
-    // If the inventory was refreshed recently, skip this refresh to avoid unnecessary load.
-    if(
-      this.inventoryCache?.fetchedAt 
-      && this.inventoryCache.inventory.length > 0 
-      && Date.now() - this.inventoryCache.fetchedAt < this.options.inventoryPollIntervalMs) {
-      this.log.info(
-        {
-          reason,
-          inventoryCount: this.inventoryCache.inventory.length,
-          fetchedAt: new Date(this.inventoryCache.fetchedAt).toISOString()
-        },
-        "Skipping inventory refresh because cache is still fresh"
-      );
-      return
+    // Refresh only when elapsed time since the last successful update reaches the configured threshold.
+    const cachedInventory = this.inventoryCache;
+    const elapsedSinceLastUpdateMs = cachedInventory?.fetchedAt
+      ? Date.now() - cachedInventory.fetchedAt
+      : null;
+
+    if (
+      cachedInventory !== null &&
+      elapsedSinceLastUpdateMs !== null &&
+      elapsedSinceLastUpdateMs < this.options.inventoryPollIntervalMs
+    ) {
+      return;
     }
 
     const snapshot = await this.fetchInventorySnapshot();
