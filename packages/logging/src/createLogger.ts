@@ -6,6 +6,7 @@ export type ServiceName =
   | "api"
   | "steam-bot"
   | "market-worker"
+  | "market-client"
   | "scheduler";
 
 export interface CreateLoggerOptions {

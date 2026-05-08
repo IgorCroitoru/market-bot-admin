@@ -1,0 +1,44 @@
+/**
+ * Constants and configuration defaults for Market CSGO API Client
+ */
+
+export const API_DEFAULTS = {
+  BASE_URL: 'https://market.csgo.com/api',
+  VERSION: 'v2',
+  REQUEST_TIMEOUT_MS: 30000,
+  MAX_RETRIES: 3,
+  RETRY_DELAY_MS: 1000,
+  RETRY_BACKOFF_MULTIPLIER: 2,
+  MAX_BACKOFF_MS: 10000,
+  REQUESTS_PER_SECOND: 5,
+  PING_INTERVAL_MS: 180000, // 3 minutes
+};
+
+export const RATE_LIMITER_DEFAULTS = {
+  MAX_CONCURRENT: 1,
+  MIN_TIME_MS: (1000 / API_DEFAULTS.REQUESTS_PER_SECOND),
+};
+
+export const ENVIRONMENT_VARIABLES = {
+  API_KEY: 'MARKET_CSGO_API_KEY',
+  API_VERSION: 'MARKET_API_VERSION',
+  MAX_RETRIES: 'MARKET_MAX_RETRIES',
+  RETRY_DELAY: 'MARKET_RETRY_DELAY_MS',
+  REQUESTS_PER_SECOND: 'MARKET_REQUESTS_PER_SECOND',
+};
+
+export const HTTP_STATUS_CODES = {
+  UNAUTHORIZED: 401,
+  FORBIDDEN: 403,
+  NOT_FOUND: 404,
+  RATE_LIMIT: 429,
+  SERVER_ERROR_START: 500,
+  SERVER_ERROR_END: 599,
+};
+
+export const ERROR_MESSAGES = {
+  MISSING_API_KEY: 'API key is required. Provide it via options or set MARKET_CSGO_API_KEY environment variable',
+  REQUEST_FAILED: 'Request failed',
+  RETRY_EXHAUSTED: 'Max retries exhausted',
+  INVALID_API_VERSION: 'Invalid API version. Use v1 or v2',
+};
