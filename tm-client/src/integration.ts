@@ -3,8 +3,10 @@
  * Demonstrates all features and best practices
  */
 
-import { MarketClient, ApiVersion } from './index';
+import { MarketClient, ApiVersion, Currency } from './index';
 import { createLogger, type AppLogger } from '@market-bot-admin/logging';
+import { logger } from './logger';
+import { loadApiOptionsFromEnv } from './config';
 
 class MarketBotIntegration {
   private client: MarketClient;
@@ -12,19 +14,10 @@ class MarketBotIntegration {
   private logger: AppLogger;
 
   constructor() {
-    this.logger = createLogger({
-      service: 'market-client',
-      environment: process.env.NODE_ENV === 'production' ? 'prod' : 'dev',
-      level: 'info',
-    });
-
+    this.logger = logger; 
+    const options = loadApiOptionsFromEnv(process.env);
     // Initialize with full configuration
-    this.client = new MarketClient({
-      version: ApiVersion.V2,
-      maxRetries: 3,
-      retryDelayMs: 1000,
-      requestsPerSecond: 5,
-    });
+    this.client = new MarketClient(options);
   }
 
   /**
@@ -217,7 +210,7 @@ class MarketBotIntegration {
       this.logger.info(`Adding ${items.length} items for sale...`);
 
       for (const item of items) {
-        const response = await this.client.addToSale(item.id, item.price, 'USD');
+        const response = await this.client.addToSale(item.id, item.price, Currency.USD);
         if (response.success) {
           this.logger.info({ item_id: response.item_id }, '✓ Item added to sale');
         } else {
@@ -238,7 +231,7 @@ class MarketBotIntegration {
     try {
       this.logger.info(`Updating prices for ${items.length} items...`);
 
-      const response = await this.client.massSetPrice(items, 'USD');
+      const response = await this.client.massSetPrice(items, Currency.USD);
 
       if (response.success && response.items) {
         response.items.forEach((item: any) => {
@@ -409,30 +402,25 @@ class MarketBotIntegration {
 /**
  * Run the integration example
  */
-async function main() {
+export async function main() {
   const integration = new MarketBotIntegration();
-  const logger = createLogger({
-    service: 'market-client',
-    environment: process.env.NODE_ENV === 'production' ? 'prod' : 'dev',
-    level: 'info',
-  });
 
   try {
     // Example 1: Manage inventory
-    logger.info('=== Example 1: Manage Inventory ===');
-    await integration.manageInventory();
+    // logger.info('=== Example 1: Manage Inventory ===');
+    // await integration.manageInventory();
 
-    // Example 2: Monitor active trades
-    logger.info('=== Example 2: Monitor Active Trades ===');
-    await integration.monitorActiveTrades();
+    // // Example 2: Monitor active trades
+    // logger.info('=== Example 2: Monitor Active Trades ===');
+    // await integration.monitorActiveTrades();
 
     // Example 3: Process P2P trades
-    logger.info('=== Example 3: Process P2P Trades ===');
-    await integration.processP2PTrades();
+    // logger.info('=== Example 3: Process P2P Trades ===');
+    // await integration.processP2PTrades();
 
     // Example 4: Get transaction history
-    logger.info('=== Example 4: Get Transaction History ===');
-    await integration.getTransactionHistory();
+    // logger.info('=== Example 4: Get Transaction History ===');
+    // await integration.getTransactionHistory();
 
     // Example 5: Get market data
     logger.info('=== Example 5: Get Market Data ===');
@@ -453,30 +441,6 @@ async function main() {
     logger.info('=== Example 8: Error Handling ===');
     await integration.demonstrateErrorHandling();
 
-    // Example 9: Add items for sale (needs real items)
-    // logger.info('=== Example 9: Add Items For Sale ===');
-    // await integration.addItemsForSale([
-    //   { id: '14933635912', price: 1034 },
-    // ]);
-
-    // Example 10: Update prices (needs real items for sale)
-    // logger.info('=== Example 10: Update Prices ===');
-    // await integration.updatePrices([
-    //   { item_id: 5712803716, price: 1600 },
-    // ]);
-
-    // Example 11: Buy item (needs balance)
-    // logger.info('=== Example 11: Buy Item ===');
-    // await integration.buyItem('M4A4 | Asiimov (Factory New)', 25000);
-
-    // Example 12: Start periodic ping (needs access token)
-    // logger.info('=== Example 12: Periodic Ping ===');
-    // await integration.startPeriodicPing('your_access_token_here');
-    // await new Promise(resolve => setTimeout(resolve, 10000));
-
-    // Example 13: Register trades (needs real trade offer IDs)
-    // logger.info('=== Example 13: Register Trades ===');
-    // await integration.registerTrades(['1234567890', '9876543210']);
   } catch (error) {
     logger.error(error, 'Integration error');
   } finally {

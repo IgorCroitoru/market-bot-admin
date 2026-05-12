@@ -1,3 +1,5 @@
+import type { AppLogger } from "@market-bot-admin/logging";
+
 /**
  * Market CSGO API Types
  */
@@ -7,21 +9,68 @@ export enum ApiVersion {
   V2 = 'v2',
 }
 
-export interface ApiConfig {
-  apiKey: string;
+export enum Currency {
+  RUB = 'RUB',
+  USD = 'USD',
+  EUR = 'EUR',
+}
+
+export const HTTP_STATUS_CODES = {
+  UNAUTHORIZED: 401,
+  FORBIDDEN: 403,
+  NOT_FOUND: 404,
+  RATE_LIMIT: 429,
+  SERVER_ERROR_START: 500,
+  SERVER_ERROR_END: 599,
+} as const;
+
+export const ERROR_MESSAGES = {
+  MISSING_API_KEY: 'API key is required. Provide it via options or set MARKET_CSGO_API_KEY environment variable',
+  REQUEST_FAILED: 'Request failed',
+  RETRY_EXHAUSTED: 'Max retries exhausted',
+  INVALID_API_VERSION: 'Invalid API version. Use v1 or v2',
+  UNAUTHORIZED: 'Unauthorized. Check your API key and permissions',
+  FORBIDDEN: 'Forbidden. You do not have access to this resource',
+} as const;
+
+export class MarketError extends Error {
+  code?: number;
+  retryable: boolean;
+  responseData?: unknown;
+
+  constructor(
+    message: string,
+    options: {
+      code?: number;
+      retryable?: boolean;
+      responseData?: unknown;
+      cause?: unknown;
+    } = {}
+  ) {
+    super(message);
+    this.name = 'MarketError';
+    this.code = options.code;
+    this.retryable = options.retryable ?? false;
+    this.responseData = options.responseData;
+    if (options.cause !== undefined) {
+      (this as any).cause = options.cause;
+    }
+  }
+}
+
+
+export interface ClientOptions {
+  apiKey?: string;
   baseUrl?: string;
   version?: ApiVersion;
   maxRetries?: number;
   retryDelayMs?: number;
   requestsPerSecond?: number;
-}
-
-export interface ClientOptions {
-  apiKey?: string;
-  version?: ApiVersion;
-  maxRetries?: number;
-  retryDelayMs?: number;
-  requestsPerSecond?: number;
+  retryBackoffMultiplier?: number;
+  requestTimeoutMs?: number;
+  maxBackoffMs?: number;
+  pingIntervalMs?: number;
+  logger?: AppLogger;
 }
 
 export interface ApiBaseResponse {

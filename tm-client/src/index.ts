@@ -1,3 +1,10 @@
 export { MarketClient } from './MarketClient';
 export * from './types';
-export * from './constants';
+import {main } from './integration';
+import dotenv from "dotenv";
+
+dotenv.config();
+
+if (require.main === module) {
+  void main();
+}

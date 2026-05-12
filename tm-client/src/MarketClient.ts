@@ -1,9 +1,11 @@
 import axios, { AxiosInstance, AxiosError } from 'axios';
 import Bottleneck from 'bottleneck';
 import {
-  ApiConfig,
   ApiVersion,
   ClientOptions,
+  ERROR_MESSAGES,
+  HTTP_STATUS_CODES,
+  MarketError,
   PingNewRequest,
   PingNewResponse,
   TradeReadyResponse,
@@ -11,27 +13,7 @@ import {
   TradeRequestGiveP2PAllResponse,
   RetryConfig,
   RateLimiterConfig,
-  AddToSaleResponse,
-  MassAddToSaleResponse,
-  SetPriceResponse,
-  MassSetPriceResponse,
-  MassSetPriceMhnResponse,
-  RemoveAllFromSaleResponse,
-  MyInventoryResponse,
-  InventoryStatusResponse,
-  ItemsResponse,
-  TradeRequestTakeResponse,
-  TradeRequestGiveResponse,
-  TradeRequestGiveP2PResponse,
-  BuyResponse,
-  GetBuyInfoResponse,
-  GetListBuyInfoResponse,
-  CheckIfReversedResponse,
-  HistoryResponse,
-  OperationHistoryResponse,
-  GetListItemsInfoResponse,
-  BidAskResponse,
-  TestResponse,
+  Currency,
 } from './types';
 
 /**
@@ -39,41 +21,39 @@ import {
  * Handles API communication with rate limiting and retry logic
  */
 export class MarketClient {
-  private apiKey: string;
-  private baseUrl: string;
-  private version: ApiVersion;
   private axiosInstance: AxiosInstance;
   private limiter: Bottleneck;
   private retryConfig: RetryConfig;
+  private apiKey: string;
+  private version: ApiVersion = ApiVersion.V2;
 
-  constructor(options?: ClientOptions) {
+  constructor(options: ClientOptions) {
     // Get API key from options or environment variable
-    this.apiKey = options?.apiKey || process.env.MARKET_CSGO_API_KEY || '';
-    if (!this.apiKey) {
+    if (!options.apiKey) {
       throw new Error(
         'API key is required. Provide it via options or set MARKET_CSGO_API_KEY environment variable'
       );
     }
 
-    this.version = options?.version || (process.env.MARKET_API_VERSION as ApiVersion) || ApiVersion.V2;
-    this.baseUrl = 'https://market.csgo.com/api';
+    this.apiKey = options.apiKey;
+    this.version = options.version || ApiVersion.V2;
 
     // Configure retry settings
     this.retryConfig = {
-      maxRetries: options?.maxRetries ?? 3,
-      delayMs: options?.retryDelayMs ?? 1000,
-      backoffMultiplier: 2,
-      maxBackoffMs: 10000,
+      maxRetries: options.maxRetries ?? 3,
+      delayMs: options.retryDelayMs ?? 1000,
+      backoffMultiplier: options.retryBackoffMultiplier ?? 2,
+      maxBackoffMs: options.maxBackoffMs ?? 10000,
     };
 
     // Create axios instance
     this.axiosInstance = axios.create({
-      baseURL: this.baseUrl,
-      timeout: 30000,
+      baseURL: options.baseUrl || 'https://market.csgo.com/api',
+      timeout: options.requestTimeoutMs ?? 30000,
     });
 
     // Configure rate limiter: max 5 requests per second
-    const requestsPerSecond = options?.requestsPerSecond ?? 5;
+    const requestsPerSecond = options.requestsPerSecond ?? 5;
     const rateLimiterConfig: RateLimiterConfig = {
       maxConcurrent: 1,
       minTime: 1000 / requestsPerSecond, // milliseconds between requests
@@ -91,17 +71,7 @@ export class MarketClient {
   private setupInterceptors(): void {
     this.axiosInstance.interceptors.response.use(
       (response) => response,
-      (error: AxiosError) => {
-        // Check if error is a server error (5xx)
-        if (error.response && error.response.status >= 500) {
-          return Promise.reject({
-            ...error,
-            isRetryable: true,
-            statusCode: error.response.status,
-          });
-        }
-        return Promise.reject(error);
-      }
+      (error: AxiosError) => Promise.reject(this.toMarketError(error))
     );
   }
 
@@ -112,23 +82,16 @@ export class MarketClient {
     requestFn: () => Promise<T>
   ): Promise<T> {
     return this.limiter.schedule(async () => {
-      let lastError: any;
       let delay = this.retryConfig.delayMs;
 
       for (let attempt = 0; attempt <= this.retryConfig.maxRetries; attempt++) {
         try {
           return await requestFn();
         } catch (error: any) {
-          lastError = error;
+          const marketError = this.toMarketError(error);
 
-          // Only retry on 5xx errors or network errors
-          const isRetryable =
-            error.isRetryable ||
-            (error.response && error.response.status >= 500) ||
-            !error.response; // Network errors
-
-          if (!isRetryable || attempt === this.retryConfig.maxRetries) {
-            throw error;
+          if (!marketError.retryable || attempt === this.retryConfig.maxRetries) {
+            throw marketError;
           }
 
           // Wait before retrying with exponential backoff
@@ -141,8 +104,58 @@ export class MarketClient {
         }
       }
 
-      throw lastError;
+      throw new MarketError(ERROR_MESSAGES.RETRY_EXHAUSTED, {
+        retryable: false,
+      });
     });
+  }
+
+  private toMarketError(error: unknown): MarketError {
+    if (error instanceof MarketError) {
+      return error;
+    }
+
+    const axiosError = error as AxiosError<any>;
+    const code = axiosError.response?.status;
+    const responseData = axiosError.response?.data;
+    const message =
+      responseData?.error ||
+      responseData?.message ||
+      responseData?.msg ||
+      axiosError.message ||
+      ERROR_MESSAGES.REQUEST_FAILED;
+
+    return new MarketError(message, {
+      code,
+      retryable: this.isRetryableError(axiosError),
+      responseData,
+      cause: error,
+    });
+  }
+
+  private isRetryableError(error: AxiosError<any>): boolean {
+    const statusCode = error.response?.status;
+
+    if (!statusCode) {
+      return true;
+    }
+
+    if (
+      statusCode === HTTP_STATUS_CODES.UNAUTHORIZED ||
+      statusCode === HTTP_STATUS_CODES.FORBIDDEN ||
+      statusCode === HTTP_STATUS_CODES.NOT_FOUND
+    ) {
+      return false;
+    }
+
+    if (statusCode === HTTP_STATUS_CODES.RATE_LIMIT) {
+      return true;
+    }
+
+    return (
+      statusCode >= HTTP_STATUS_CODES.SERVER_ERROR_START &&
+      statusCode <= HTTP_STATUS_CODES.SERVER_ERROR_END
+    );
   }
 
   /**
@@ -281,7 +294,7 @@ export class MarketClient {
    * Put an item for sale
    * https://market.csgo.com/api/v2/add-to-sale?key=[your_secret_key]&id=[id]&price=[price]&cur=[currency]
    */
-  async addToSale(id: string | number, price: number, cur: string): Promise<any> {
+  async addToSale(id: string | number, price: number, cur: Currency = Currency.USD): Promise<any> {
     return this.executeWithRetry(async () => {
       const url = `/${this.version}/add-to-sale?${this.buildQueryString({
         id,
@@ -297,7 +310,7 @@ export class MarketClient {
    * Put multiple items for sale
    * [POST] https://market.csgo.com/api/v2/mass-add-to-sale?key=[your_secret_key]&cur=[currency]
    */
-  async massAddToSale(items: Array<{ asset: number; price: number }>, cur: string): Promise<any> {
+  async massAddToSale(items: Array<{ asset: number; price: number }>, cur: Currency = Currency.USD): Promise<any> {
     return this.executeWithRetry(async () => {
       const url = `/${this.version}/mass-add-to-sale?${this.buildQueryString({ cur })}`;
       const response = await this.axiosInstance.post<any>(url, { items });
@@ -309,7 +322,7 @@ export class MarketClient {
    * Set a new price on the item, or remove from sale
    * https://market.csgo.com/api/v2/set-price?key=[your_secret_key]&item_id=[item_id]&price=[price]&cur=[currency]
    */
-  async setPrice(itemId: string | number, price: number, cur: string): Promise<any> {
+  async setPrice(itemId: string | number, price: number, cur: Currency = Currency.USD): Promise<any> {
     return this.executeWithRetry(async () => {
       const url = `/${this.version}/set-price?${this.buildQueryString({
         item_id: itemId,
@@ -325,7 +338,7 @@ export class MarketClient {
    * Set a new price on multiple items
    * [POST] https://market.csgo.com/api/v2/mass-set-price?key=[your_secret_key]&cur=[currency]
    */
-  async massSetPrice(items: Array<{ item_id: number; price: number }>, cur: string): Promise<any> {
+  async massSetPrice(items: Array<{ item_id: number; price: number }>, cur: Currency = Currency.USD): Promise<any> {
     return this.executeWithRetry(async () => {
       const url = `/${this.version}/mass-set-price?${this.buildQueryString({ cur })}`;
       const response = await this.axiosInstance.post<any>(url, { items });
@@ -337,7 +350,7 @@ export class MarketClient {
    * Set price by market hash name
    * [POST] https://market.csgo.com/api/v2/mass-set-price-mhn?key=[your_secret_key]&cur=[currency]
    */
-  async massSetPriceMhn(marketHashName: string, price: number, cur: string): Promise<any> {
+  async massSetPriceMhn(marketHashName: string, price: number, cur: Currency = Currency.USD ): Promise<any> {
     return this.executeWithRetry(async () => {
       const url = `/${this.version}/mass-set-price-mhn?${this.buildQueryString({ cur })}`;
       const response = await this.axiosInstance.post<any>(url, {
