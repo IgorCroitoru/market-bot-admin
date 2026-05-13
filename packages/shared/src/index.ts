@@ -1,4 +1,6 @@
 // Export shared types and interfaces here
+export * from "./storage";
+
 export interface ApiRequest {
   userId?: string;
   timestamp: number;
@@ -15,3 +17,4 @@ export interface User {
   email: string;
   name: string;
 }
+

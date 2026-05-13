@@ -6,6 +6,7 @@
     "packages/config",
     "packages/shared",
     "packages/queue",
+    "packages/storage",
     "tm-client",
     "frontend",
     "steam-bot"

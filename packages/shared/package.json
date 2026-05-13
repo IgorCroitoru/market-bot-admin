@@ -15,5 +15,11 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "watch": "tsc -w -p tsconfig.json"
+  },
+  "devDependencies": {
+    "@types/steamcommunity": "^3.50.0"
+  },
+  "dependencies": {
+    "steamcommunity": "^3.50.0"
   }
 }

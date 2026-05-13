@@ -8,7 +8,8 @@ import { createLogger, type AppLogger } from '@market-bot-admin/logging';
 import { logger } from './logger';
 import { loadApiOptionsFromEnv, loadAzureQueueConfigFromEnv } from './config';
 import { AzureStorageQueue, AzureQueueConfig } from '@market-bot-admin/queue';
-
+import {AzureBlobStorage, ReadonlyStorage} from "@market-bot-admin/storage";
+import { BotStorageItems } from '@market-bot-admin/shared';
 type TradeStatusChangedMessage = {
   type: 'trade-status-changed';
   tradeId: string;
@@ -30,6 +31,8 @@ type Messages = MessageDefaultBody & (TradeStatusChangedMessage | BotStatusChang
 class MarketBotIntegration {
   private client: MarketClient;
   private pingInterval: NodeJS.Timeout | null = null;
+  private tradeStatusPollInterval: NodeJS.Timeout | null = null;
+  private tokensPollInterval: NodeJS.Timeout | null = null;
   private logger: AppLogger;
   private azureQueue: AzureStorageQueue<Messages>;
 
@@ -49,6 +52,11 @@ class MarketBotIntegration {
   async setQueueMessage(message: Messages): Promise<void> {
     await this.azureQueue.send(message);
   }
+
+  async startTokensPolling(): Promise<void> {
+
+  }
+
   /**
    * Example 1: Start periodic pinging (every 3 minutes)
    */
@@ -431,12 +439,21 @@ class MarketBotIntegration {
 /**
  * Run the integration example
  */
+
+type ExtendedBotStorgeItems = BotStorageItems & {"login-attempts" : number[]}
 export async function main() {
   const integration = new MarketBotIntegration();
   try {
     await integration.azureQueueClient.consumeForever(async (message) => {
       logger.info({ message: message.body.type }, 'Received queue message');
     });
+     const storage : ReadonlyStorage<ExtendedBotStorgeItems> = new AzureBlobStorage({
+      accountName: String(process.env.ACCOUNT_NAME),
+      storageAccountName: String(process.env.AZURE_STORAGE_ACCOUNT_NAME),
+      containerName: String(process.env.AZURE_BOT_CONTAINER_NAME),
+     });
+      const loginAttempts = await storage.getData("login-attempts");
+      logger.info({ loginAttempts }, 'Login attempts from storage');
     // integration.setQueueMessage('Integration started');
       
     // Example 1: Manage inventory
