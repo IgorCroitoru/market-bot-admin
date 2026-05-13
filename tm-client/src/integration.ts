@@ -6,20 +6,49 @@
 import { MarketClient, ApiVersion, Currency } from './index';
 import { createLogger, type AppLogger } from '@market-bot-admin/logging';
 import { logger } from './logger';
-import { loadApiOptionsFromEnv } from './config';
+import { loadApiOptionsFromEnv, loadAzureQueueConfigFromEnv } from './config';
+import { AzureStorageQueue, AzureQueueConfig } from '@market-bot-admin/queue';
+
+type TradeStatusChangedMessage = {
+  type: 'trade-status-changed';
+  tradeId: string;
+  offerId: number;
+  oldStatus: string;
+  newStatus: string;
+}
+
+type BotStatusChangedMessage = {
+  type: 'bot-status-changed';
+  status: string;
+}
+
+type MessageDefaultBody = {
+  type: string;
+}
+type Messages = MessageDefaultBody & (TradeStatusChangedMessage | BotStatusChangedMessage);
 
 class MarketBotIntegration {
   private client: MarketClient;
   private pingInterval: NodeJS.Timeout | null = null;
   private logger: AppLogger;
+  private azureQueue: AzureStorageQueue<Messages>;
 
   constructor() {
     this.logger = logger; 
     const options = loadApiOptionsFromEnv(process.env);
+    const azureQueueConfig = loadAzureQueueConfigFromEnv(process.env);
+    this.azureQueue = new AzureStorageQueue(azureQueueConfig);
     // Initialize with full configuration
     this.client = new MarketClient(options);
   }
 
+  get azureQueueClient(): AzureStorageQueue<Messages> {
+    return this.azureQueue;
+  }
+
+  async setQueueMessage(message: Messages): Promise<void> {
+    await this.azureQueue.send(message);
+  }
   /**
    * Example 1: Start periodic pinging (every 3 minutes)
    */
@@ -404,8 +433,12 @@ class MarketBotIntegration {
  */
 export async function main() {
   const integration = new MarketBotIntegration();
-
   try {
+    await integration.azureQueueClient.consumeForever(async (message) => {
+      logger.info({ message: message.body.type }, 'Received queue message');
+    });
+    // integration.setQueueMessage('Integration started');
+      
     // Example 1: Manage inventory
     // logger.info('=== Example 1: Manage Inventory ===');
     // await integration.manageInventory();
@@ -423,23 +456,23 @@ export async function main() {
     // await integration.getTransactionHistory();
 
     // Example 5: Get market data
-    logger.info('=== Example 5: Get Market Data ===');
-    await integration.getMarketData([
-      'M4A4 | Asiimov (Factory New)',
-      'AWP Dragon Lore (Factory New)',
-    ]);
+    // logger.info('=== Example 5: Get Market Data ===');
+    // await integration.getMarketData([
+    //   'M4A4 | Asiimov (Factory New)',
+    //   'AWP Dragon Lore (Factory New)',
+    // ]);
 
-    // Example 6: Version switching
-    logger.info('=== Example 6: API Version Switching ===');
-    await integration.demonstrateVersionSwitching();
+    // // Example 6: Version switching
+    // logger.info('=== Example 6: API Version Switching ===');
+    // await integration.demonstrateVersionSwitching();
 
-    // Example 7: Rate limiting
-    logger.info('=== Example 7: Rate Limiting ===');
-    await integration.monitorRateLimiting();
+    // // Example 7: Rate limiting
+    // logger.info('=== Example 7: Rate Limiting ===');
+    // await integration.monitorRateLimiting();
 
-    // Example 8: Error handling
-    logger.info('=== Example 8: Error Handling ===');
-    await integration.demonstrateErrorHandling();
+    // // Example 8: Error handling
+    // logger.info('=== Example 8: Error Handling ===');
+    // await integration.demonstrateErrorHandling();
 
   } catch (error) {
     logger.error(error, 'Integration error');

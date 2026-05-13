@@ -1,5 +1,6 @@
-import { z, numberFromEnv } from "@market-bot-admin/config"
+import { z, numberFromEnv, booleanFromEnv } from "@market-bot-admin/config"
 import { ApiVersion, ClientOptions } from "./types";
+import { AzureQueueConfig } from "../../packages/queue/dist/AzureStorageQueue";
 
 const envSchema = z.object({
   NODE_ENV: z.enum(["dev", "prod", "test"]).default("dev"),
@@ -18,14 +19,35 @@ const envSchema = z.object({
   PING_INTERVAL_MS: numberFromEnv(180000), // 3 minutes
 });
 
-export type ApiRuntimeConfig = z.infer<typeof envSchema>;
+const azureQueueConfigSchema = z.object({
+  AZURE_QUEUE_CONNECTION_STRING: z.string().optional(),
+  AZURE_QUEUE_ACCOUNT_NAME: z.string().optional(),
+  AZURE_QUEUE_CREATE_IF_NOT_EXISTS: booleanFromEnv(false),
+  AZURE_QUEUE_NAME: z.string()
+});
 
-export function loadApiConfigFromEnv(env: NodeJS.ProcessEnv = process.env): ApiRuntimeConfig {
+export type ApiRuntimeZodConfig = z.infer<typeof envSchema>;
+export type AzureQueueZodConfig = z.infer<typeof azureQueueConfigSchema>;
+
+export function loadApiZodConfigFromEnv(env: NodeJS.ProcessEnv = process.env): ApiRuntimeZodConfig {
   return envSchema.parse(env);
 }
 
+export function loadAzureQueueZodConfigFromEnv(env: NodeJS.ProcessEnv = process.env): AzureQueueZodConfig {
+  return azureQueueConfigSchema.parse(env);
+}
+
+export function loadAzureQueueConfigFromEnv(env: NodeJS.ProcessEnv = process.env): AzureQueueConfig {
+  const config = loadAzureQueueZodConfigFromEnv(env);
+  return {
+    queueName: config.AZURE_QUEUE_NAME,
+    accountName: config.AZURE_QUEUE_ACCOUNT_NAME,
+    createIfNotExists: config.AZURE_QUEUE_CREATE_IF_NOT_EXISTS,
+  }
+}
+
 export function loadApiOptionsFromEnv(env: NodeJS.ProcessEnv = process.env): ClientOptions {
-  const config = loadApiConfigFromEnv(env);
+  const config = loadApiZodConfigFromEnv(env);
 
   return {
     apiKey: config.API_KEY,

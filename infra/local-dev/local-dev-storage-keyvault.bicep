@@ -7,7 +7,7 @@ param location string = resourceGroup().location
 param storageAccountName string
 
 @description('Blob container used by AzureBotStorage.')
-param blobContainerName string = 'steam-bot'
+param blobContainerName string
 
 @description('Globally unique Key Vault name.')
 param keyVaultName string
@@ -15,19 +15,12 @@ param keyVaultName string
 @description('Your Microsoft Entra user object ID for local development.')
 param developerObjectId string
 
-@description('Optional ACA runtime managed identity principalId. Leave empty for local-dev-only deployment.')
-param runtimePrincipalId string = ''
 
 @description('Tags.')
-param tags object = {
-  environment: 'local-dev'
-  workload: 'market-cloud-bot'
-  managedBy: 'bicep'
-}
+param tags object = {}
 
 var storageBlobDataContributorRoleId = 'ba92f5b4-2d11-453d-a403-e96b0029c9fe'
 var keyVaultSecretsOfficerRoleId = 'b86a8fe4-44ce-4948-aee5-eccb2c155cd7'
-var keyVaultSecretsUserRoleId = '4633458b-17de-408a-b874-0445c86b69e6'
 
 resource storageAccount 'Microsoft.Storage/storageAccounts@2024-01-01' = {
   name: storageAccountName

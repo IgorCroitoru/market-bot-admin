@@ -5,13 +5,16 @@
     "packages/logging",
     "packages/config",
     "packages/shared",
+    "packages/queue",
+    "tm-client",
     "frontend",
     "steam-bot"
   ],
   "scripts": {
-    "build": "npm run build -w @market-bot-admin/logging && npm run build -w @market-bot-admin/config && npm run build -w steam-bot",
+    "build": "npm run build -w @market-bot-admin/logging && npm run build -w @market-bot-admin/config && npm run build -w @market-bot-admin/queue && npm run build -w steam-bot",
     "build:logging": "npm run build -w @market-bot-admin/logging",
     "build:config": "npm run build -w @market-bot-admin/config",
+    "build:queue": "npm run build -w @market-bot-admin/queue",
     "dev:api": "npm run start -w api",
     "dev:bot": "npm run dev -w steam-bot"
   },
