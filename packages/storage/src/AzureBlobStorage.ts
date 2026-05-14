@@ -21,7 +21,7 @@ export class AzureBlobStorage<TItems extends Record<string, unknown> = any> impl
         this.accountName = options.accountName;
         const credential = new DefaultAzureCredential();
         const azureBlobServiceClient = new BlobServiceClient(
-            `https://${options.accountName}.blob.core.windows.net/${options.containerName}`,
+            `https://${options.storageAccountName}.blob.core.windows.net`,
             credential  
         );
 

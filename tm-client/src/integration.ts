@@ -9,7 +9,8 @@ import { logger } from './logger';
 import { loadApiOptionsFromEnv, loadAzureQueueConfigFromEnv } from './config';
 import { AzureStorageQueue, AzureQueueConfig } from '@market-bot-admin/queue';
 import {AzureBlobStorage, ReadonlyStorage} from "@market-bot-admin/storage";
-import { BotStorageItems } from '@market-bot-admin/shared';
+import { BotStorageItems, TokenCache } from '@market-bot-admin/shared';
+import { log } from 'console';
 type TradeStatusChangedMessage = {
   type: 'trade-status-changed';
   tradeId: string;
@@ -35,7 +36,8 @@ class MarketBotIntegration {
   private tokensPollInterval: NodeJS.Timeout | null = null;
   private logger: AppLogger;
   private azureQueue: AzureStorageQueue<Messages>;
-
+  private tokensCache: TokenCache | null = null;
+  private readonly storage: ReadonlyStorage<BotStorageItems>;
   constructor() {
     this.logger = logger; 
     const options = loadApiOptionsFromEnv(process.env);
@@ -43,6 +45,12 @@ class MarketBotIntegration {
     this.azureQueue = new AzureStorageQueue(azureQueueConfig);
     // Initialize with full configuration
     this.client = new MarketClient(options);
+
+    this.storage = new AzureBlobStorage({
+      accountName: String(process.env.ACCOUNT_NAME),
+      storageAccountName: String(process.env.AZURE_STORAGE_ACCOUNT_NAME),
+      containerName: String(process.env.AZURE_BOT_CONTAINER_NAME),
+     });
   }
 
   get azureQueueClient(): AzureStorageQueue<Messages> {
@@ -54,38 +62,55 @@ class MarketBotIntegration {
   }
 
   async startTokensPolling(): Promise<void> {
+     if (this.tokensPollInterval) {
+      clearInterval(this.tokensPollInterval);
+    }
 
+    await this.loadTokensFromStorage();
+
+    this.tokensPollInterval = setInterval(async () => {
+      await this.loadTokensFromStorage();
+      }, 5 * 60 * 1000); // Every 5 minutes
   }
 
-  /**
-   * Example 1: Start periodic pinging (every 3 minutes)
-   */
-  async startPeriodicPing(accessToken: string): Promise<void> {
+  async loadTokensFromStorage(): Promise<void> {
+    try {
+      const tokenCache = await this.storage.getData("token-cache");
+      this.tokensCache = tokenCache;
+    } catch (error) {
+      this.logger.error(error, 'Error loading tokens from storage');
+    }
+  }
+
+  async startPeriodicPing(): Promise<void> {
     this.logger.info('Starting periodic ping...');
 
-    const ping = async () => {
+    await this.ping();
+
+    // Then schedule it every 3 minutes (180000ms)
+    this.pingInterval = setInterval(() => this.ping(), 180000);
+  }
+
+  async ping(): Promise<void> {
+    if(!this.tokensCache || !this.tokensCache.accessToken) {
+        this.logger.warn('No access token available, skipping ping');
+        return;
+      }
       try {
         const response = await this.client.pingNew({
-          access_token: accessToken,
+          access_token: this.tokensCache.accessToken,
         });
 
         if (response.success) {
-          this.logger.debug(`✓ Ping successful at ${new Date().toISOString()}`);
+          this.logger.info(`✓ Ping successful at ${new Date().toISOString()}`);
+          this.logger.info(response, 'Ping response');
         } else {
-          this.logger.warn(`✗ Ping failed`);
+          this.logger.warn(response, `✗ Ping failed`);
         }
       } catch (error) {
         this.logger.error(error, 'Ping error');
       }
-    };
-
-    // Execute ping immediately
-    await ping();
-
-    // Then schedule it every 3 minutes (180000ms)
-    this.pingInterval = setInterval(ping, 180000);
   }
-
   /**
    * Example 2: Fetch and process all P2P trade requests
    */
@@ -330,9 +355,7 @@ class MarketBotIntegration {
     }
   }
 
-  /**
-   * Example 10: Get transaction history
-   */
+
   async getTransactionHistory(): Promise<void> {
     try {
       // Get history for last 30 days
@@ -356,24 +379,6 @@ class MarketBotIntegration {
     }
   }
 
-  /**
-   * Example 11: API version switching
-   */
-  async demonstrateVersionSwitching(): Promise<void> {
-    this.logger.info(`Current API version: ${this.client.getVersion()}`);
-
-    // Switch to V1
-    this.client.setVersion(ApiVersion.V1);
-    this.logger.info(`Switched to API version: ${this.client.getVersion()}`);
-
-    // Switch back to V2
-    this.client.setVersion(ApiVersion.V2);
-    this.logger.info(`Switched back to API version: ${this.client.getVersion()}`);
-  }
-
-  /**
-   * Example 12: Monitor rate limiting
-   */
   async monitorRateLimiting(): Promise<void> {
     this.logger.info(this.client.getRateLimiterStats(), 'Rate limiter stats');
 
@@ -436,65 +441,34 @@ class MarketBotIntegration {
   }
 }
 
-/**
- * Run the integration example
- */
 
-type ExtendedBotStorgeItems = BotStorageItems & {"login-attempts" : number[]}
 export async function main() {
   const integration = new MarketBotIntegration();
+  let stopping = false;
+
+  const stopIntegration = async (): Promise<void> => {
+    if (stopping) {
+      return;
+    }
+
+    stopping = true;
+    await integration.stop();
+  };
+
+  process.once('SIGINT', () => {
+    void stopIntegration();
+  });
+
+  process.once('SIGTERM', () => {
+    void stopIntegration();
+  });
+
   try {
-    await integration.azureQueueClient.consumeForever(async (message) => {
-      logger.info({ message: message.body.type }, 'Received queue message');
-    });
-     const storage : ReadonlyStorage<ExtendedBotStorgeItems> = new AzureBlobStorage({
-      accountName: String(process.env.ACCOUNT_NAME),
-      storageAccountName: String(process.env.AZURE_STORAGE_ACCOUNT_NAME),
-      containerName: String(process.env.AZURE_BOT_CONTAINER_NAME),
-     });
-      const loginAttempts = await storage.getData("login-attempts");
-      logger.info({ loginAttempts }, 'Login attempts from storage');
-    // integration.setQueueMessage('Integration started');
-      
-    // Example 1: Manage inventory
-    // logger.info('=== Example 1: Manage Inventory ===');
-    // await integration.manageInventory();
-
-    // // Example 2: Monitor active trades
-    // logger.info('=== Example 2: Monitor Active Trades ===');
-    // await integration.monitorActiveTrades();
-
-    // Example 3: Process P2P trades
-    // logger.info('=== Example 3: Process P2P Trades ===');
-    // await integration.processP2PTrades();
-
-    // Example 4: Get transaction history
-    // logger.info('=== Example 4: Get Transaction History ===');
-    // await integration.getTransactionHistory();
-
-    // Example 5: Get market data
-    // logger.info('=== Example 5: Get Market Data ===');
-    // await integration.getMarketData([
-    //   'M4A4 | Asiimov (Factory New)',
-    //   'AWP Dragon Lore (Factory New)',
-    // ]);
-
-    // // Example 6: Version switching
-    // logger.info('=== Example 6: API Version Switching ===');
-    // await integration.demonstrateVersionSwitching();
-
-    // // Example 7: Rate limiting
-    // logger.info('=== Example 7: Rate Limiting ===');
-    // await integration.monitorRateLimiting();
-
-    // // Example 8: Error handling
-    // logger.info('=== Example 8: Error Handling ===');
-    // await integration.demonstrateErrorHandling();
-
+    await integration.startTokensPolling();
+    await integration.startPeriodicPing();
+    logger.info('Integration started and running until shutdown signal');
   } catch (error) {
     logger.error(error, 'Integration error');
-  } finally {
-    await integration.stop();
   }
 }
 

@@ -24,6 +24,10 @@ export const HTTP_STATUS_CODES = {
   SERVER_ERROR_END: 599,
 } as const;
 
+export const API_ERROR_MESSAGES = {
+  INVALID_ACCESS_TOKEN: 'Invalid access token'
+} as const;
+
 export const ERROR_MESSAGES = {
   MISSING_API_KEY: 'API key is required. Provide it via options or set MARKET_CSGO_API_KEY environment variable',
   REQUEST_FAILED: 'Request failed',
