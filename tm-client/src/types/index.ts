@@ -81,12 +81,7 @@ export interface ApiBaseResponse {
     success: boolean;
 }
 
-/**
- * Trade Request Response
- */
-export interface TradeRequestGiveP2PAllResponse {
-  [key: string]: TradeOffer;
-}
+
 
 export interface TradeOffer {
   id: string;
@@ -127,6 +122,13 @@ export interface TradeReadyResponse extends ApiBaseResponse {
   error?: string;
 }
 
+export type TradeDir = "out" | "in"
+export type TradeItem = {
+  id: string;
+  assetid: string;
+  classid: string;
+  instanceid: string;
+}
 /**
  * Trades Response
  */
@@ -134,18 +136,15 @@ export interface TradesResponse extends ApiBaseResponse {
   trades: Trade[];
 }
 
-export interface Trade {
-  trade_id: string;
-  trade_offer_id: string;
-  status: string;
-  created_at: string;
-  items: TradeItem[];
-}
 
-export interface TradeItem {
-  id: string;
-  name: string;
-  price: number;
+export interface Trade {
+  dir: TradeDir;
+  trade_id: string;
+  timestamp: number
+  secret: string;
+  bot_id: string;
+  nik: string;
+  list_item_id: Record<string, TradeItem>;
 }
 
 /**
@@ -321,29 +320,21 @@ export interface ItemsResponse extends ApiBaseResponse {
   items: ItemInfo[];
 }
 
-/**
- * Trade Request Take Response
- */
-export interface TradeRequestTakeResponse extends ApiBaseResponse {
-  trade: string;
-  nick: string;
-  botid: string;
-  profile: string;
-  secret: string;
-  items: string[];
-  error?: string | number;
-}
-
-/**
- * Trade Request Give Response
- */
-export interface TradeRequestGiveResponse extends ApiBaseResponse {
-  trade: string;
-  nick: string;
-  botid: string;
-  profile: string;
-  secret: string;
-  items: number[];
+export type OfferGiveP2P = {
+  partner: number;
+  token: string;
+  tradeoffermessage: string;
+  items: Array<{
+    appid: number;
+    contextid: number;
+    assetid: number;
+    amount: number;
+    price?: {
+      sell: number;
+      receive: number;
+      currency: Currency;
+    }
+  }>
 }
 
 /**
@@ -351,18 +342,17 @@ export interface TradeRequestGiveResponse extends ApiBaseResponse {
  */
 export interface TradeRequestGiveP2PResponse extends ApiBaseResponse {
   hash: string;
-  offer: {
-    partner: number;
-    token: string;
-    tradeoffermessage: string;
-    items: Array<{
-      appid: number;
-      contextid: number;
-      assetid: number;
-      amount: number;
-    }>;
-  };
+  offer: OfferGiveP2P;
 }
+
+export interface TradeRequestGiveP2PAllResponse extends ApiBaseResponse {
+  offers: Array<
+    OfferGiveP2P & {
+      hash: string;
+    }
+  >;
+}
+
 
 /**
  * Buy Request/Response
@@ -529,9 +519,12 @@ export interface BidAskResponse extends ApiBaseResponse {
   currency: string;
 }
 
-/**
- * Test Response
- */
 export interface TestResponse extends ApiBaseResponse {
-  [key: string]: any;
+  status: {
+    user_token: boolean;
+    trade_check: boolean;
+    site_online: boolean;
+    site_notmpban: boolean;
+    steam_web_api_key: boolean;
+  }
 }

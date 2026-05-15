@@ -3,7 +3,7 @@
  * Demonstrates all features and best practices
  */
 
-import { MarketClient, ApiVersion, Currency } from './index';
+import { MarketClient, ApiVersion, Currency, OfferGiveP2P } from './index';
 import { createLogger, type AppLogger } from '@market-bot-admin/logging';
 import { logger } from './logger';
 import { loadApiOptionsFromEnv, loadAzureQueueConfigFromEnv } from './config';
@@ -102,8 +102,7 @@ class MarketBotIntegration {
         });
 
         if (response.success) {
-          this.logger.info(`✓ Ping successful at ${new Date().toISOString()}`);
-          this.logger.info(response, 'Ping response');
+          this.logger.debug(`✓ Ping successful at ${new Date().toISOString()}`);
         } else {
           this.logger.warn(response, `✗ Ping failed`);
         }
@@ -111,29 +110,27 @@ class MarketBotIntegration {
         this.logger.error(error, 'Ping error');
       }
   }
-  /**
-   * Example 2: Fetch and process all P2P trade requests
-   */
+  
+  async wasOfferAlreadySent(offer:OfferGiveP2P & {
+        hash: string;
+      }): Promise<boolean> {
+    // Implementation for checking if offer was already sent
+    return false;
+  }
+
   async processP2PTrades(): Promise<void> {
     try {
       this.logger.info('Fetching P2P trade requests...');
       const tradeRequests = await this.client.getTradeRequestGiveP2PAll();
+      if (tradeRequests.success) {
+        for (const offer of tradeRequests.offers) {
+          if (!(await this.wasOfferAlreadySent(offer))) {
+            this.logger.info({ offerId: offer.hash }, 'Processing new P2P trade offer');
 
-      const tradeIds = Object.keys(tradeRequests);
-      this.logger.info(`Found ${tradeIds.length} trade requests`);
-
-      // Process each trade
-      for (const tradeId of tradeIds) {
-        const trade = tradeRequests[tradeId];
-        this.logger.info(
-          {
-            tradeId,
-            status: trade.ui_status,
-            price: trade.estimated_price,
-          },
-          'Trade details'
-        );
+          }
+        }
       }
+      
     } catch (error) {
       this.logger.error(error, 'Error processing P2P trades');
     }
@@ -174,22 +171,9 @@ class MarketBotIntegration {
       if (tradesData.success) {
         this.logger.info(`Found ${tradesData.trades.length} active trades`);
 
-        for (const trade of tradesData.trades) {
-          const totalValue = trade.items.reduce(
-            (sum, item) => sum + item.price,
-            0
-          );
-          this.logger.info(
-            {
-              tradeId: trade.trade_id,
-              status: trade.status,
-              itemCount: trade.items.length,
-              totalValue,
-            },
-            'Trade info'
-          );
+        
         }
-      }
+      
     } catch (error) {
       this.logger.error(error, 'Error fetching trades');
     }
@@ -284,36 +268,6 @@ class MarketBotIntegration {
     }
   }
 
-  /**
-   * Example 8: Update prices
-   */
-  async updatePrices(
-    items: Array<{ item_id: number; price: number }>
-  ): Promise<void> {
-    try {
-      this.logger.info(`Updating prices for ${items.length} items...`);
-
-      const response = await this.client.massSetPrice(items, Currency.USD);
-
-      if (response.success && response.items) {
-        response.items.forEach((item: any) => {
-          if (item.success) {
-            this.logger.info(
-              { item_id: item.item_id, price: item.price },
-              '✓ Price updated'
-            );
-          } else {
-            this.logger.error(
-              { item_id: item.item_id, error: item.error },
-              '✗ Price update failed'
-            );
-          }
-        });
-      }
-    } catch (error) {
-      this.logger.error(error, 'Error updating prices');
-    }
-  }
 
   /**
    * Example 9: Get market data
@@ -379,25 +333,6 @@ class MarketBotIntegration {
     }
   }
 
-  async monitorRateLimiting(): Promise<void> {
-    this.logger.info(this.client.getRateLimiterStats(), 'Rate limiter stats');
-
-    // Make several requests to see the queue
-    const promises = [
-      this.client.getTrades(),
-      this.client.getTrades(),
-      this.client.getTrades(),
-    ];
-
-    this.logger.info('Made 3 concurrent requests');
-    this.logger.info(this.client.getRateLimiterStats(), 'Rate limiter stats');
-
-    await Promise.all(promises);
-    this.logger.info(
-      this.client.getRateLimiterStats(),
-      'After requests completed'
-    );
-  }
 
   /**
    * Example 13: Error handling and retries

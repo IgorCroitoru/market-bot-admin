@@ -5,7 +5,7 @@ export interface ReadonlyStorage<TItems extends Record<string, unknown> = any> {
   getGenericData<T>(key: string): Promise<T | null>
 }
 
-export interface WritableStorage<TItems extends Record<string, unknown> = any>
+export interface Storage<TItems extends Record<string, unknown> = any>
   extends ReadonlyStorage<TItems> {
   saveData<TKey extends keyof TItems & string>(
     key: TKey,

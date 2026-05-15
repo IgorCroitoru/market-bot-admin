@@ -18,6 +18,7 @@
   },
   "dependencies": {
     "@azure/core-auth": "^1.10.1",
+    "@azure/data-tables": "^13.3.2",
     "@azure/identity": "^4.13.1",
     "@azure/storage-blob": "^12.31.0",
     "@market-bot-admin/config": "file:../packages/config",

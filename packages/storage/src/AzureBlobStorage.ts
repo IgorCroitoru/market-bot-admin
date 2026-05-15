@@ -1,5 +1,5 @@
 import { BlobServiceClient, ContainerClient } from "@azure/storage-blob";
-import { ReadonlyStorage, WritableStorage } from "./interfaces";
+import { ReadonlyStorage, Storage } from "./interfaces";
 import { DefaultAzureCredential } from "@azure/identity";
 
 export type BlobNameMap<TItems extends Record<string, unknown>> = {
@@ -12,7 +12,7 @@ export interface AzureBotStorageOptions {
   storageAccountName: string;
 }
 
-export class AzureBlobStorage<TItems extends Record<string, unknown> = any> implements WritableStorage<TItems> {
+export class AzureBlobStorage<TItems extends Record<string, unknown> = any> implements Storage<TItems> {
     private readonly accountName: string;
     private readonly container: ContainerClient;
     private ensureContainerPromise: Promise<void> | null = null;
@@ -96,14 +96,6 @@ async function streamToString(stream: NodeJS.ReadableStream): Promise<string> {
   }
 
   return Buffer.concat(chunks).toString("utf8");
-}
-
-function required(value: string | undefined, name: string): string {
-  if (!value) {
-    throw new Error(`Missing required Azure storage option: ${name}`);
-  }
-
-  return value;
 }
 
 function sanitizeName(value: string): string {
