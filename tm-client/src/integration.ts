@@ -6,27 +6,17 @@
 import { MarketClient, ApiVersion, Currency, OfferGiveP2P } from './index';
 import { createLogger, type AppLogger } from '@market-bot-admin/logging';
 import { logger } from './logger';
-import { loadApiOptionsFromEnv, loadAzureQueueConfigFromEnv } from './config';
+import { loadApiOptionsFromEnv, loadAzureBlobStorageOptionsFromEnv, loadAzureQueueOptionsFromEnv, loadAzureTableStorageOptionsFromEnv } from './config';
 import { AzureStorageQueue, AzureQueueConfig } from '@market-bot-admin/queue';
-import {AzureBlobStorage, ReadonlyStorage} from "@market-bot-admin/storage";
-import { BotStorageItems, TokenCache } from '@market-bot-admin/shared';
-import { log } from 'console';
-type TradeStatusChangedMessage = {
-  type: 'trade-status-changed';
-  tradeId: string;
-  offerId: number;
-  oldStatus: string;
-  newStatus: string;
-}
+import {AzureBlobStorage, AzureTableJsonStorage, ReadonlyStorage, ReadonlyTableStorage, TableStorage} from "@market-bot-admin/storage";
+import { 
+  BotStorageItems, 
+  TokenCache, 
+  MessageDefaultBody, 
+  TradeStatusChangedMessage, 
+  BotStatusChangedMessage } from '@market-bot-admin/shared';
 
-type BotStatusChangedMessage = {
-  type: 'bot-status-changed';
-  status: string;
-}
 
-type MessageDefaultBody = {
-  type: string;
-}
 type Messages = MessageDefaultBody & (TradeStatusChangedMessage | BotStatusChangedMessage);
 
 class MarketBotIntegration {
@@ -37,20 +27,21 @@ class MarketBotIntegration {
   private logger: AppLogger;
   private azureQueue: AzureStorageQueue<Messages>;
   private tokensCache: TokenCache | null = null;
-  private readonly storage: ReadonlyStorage<BotStorageItems>;
+  private readonly botStorage: ReadonlyStorage<BotStorageItems>;
+  private readonly tradesStorage: TableStorage;
   constructor() {
     this.logger = logger; 
     const options = loadApiOptionsFromEnv(process.env);
-    const azureQueueConfig = loadAzureQueueConfigFromEnv(process.env);
+    const azureQueueConfig = loadAzureQueueOptionsFromEnv(process.env);
+    const azureBlobStorageConfig = loadAzureBlobStorageOptionsFromEnv(process.env);
+    const azureTableStorageConfig = loadAzureTableStorageOptionsFromEnv(process.env);
     this.azureQueue = new AzureStorageQueue(azureQueueConfig);
     // Initialize with full configuration
     this.client = new MarketClient(options);
 
-    this.storage = new AzureBlobStorage({
-      accountName: String(process.env.ACCOUNT_NAME),
-      storageAccountName: String(process.env.AZURE_STORAGE_ACCOUNT_NAME),
-      containerName: String(process.env.AZURE_BOT_CONTAINER_NAME),
-     });
+    this.botStorage = new AzureBlobStorage(azureBlobStorageConfig);
+     
+    this.tradesStorage = new AzureTableJsonStorage(azureTableStorageConfig);
   }
 
   get azureQueueClient(): AzureStorageQueue<Messages> {
@@ -75,7 +66,7 @@ class MarketBotIntegration {
 
   async loadTokensFromStorage(): Promise<void> {
     try {
-      const tokenCache = await this.storage.getData("token-cache");
+      const tokenCache = await this.botStorage.getData("token-cache");
       this.tokensCache = tokenCache;
     } catch (error) {
       this.logger.error(error, 'Error loading tokens from storage');
@@ -102,9 +93,9 @@ class MarketBotIntegration {
         });
 
         if (response.success) {
-          this.logger.debug(`✓ Ping successful at ${new Date().toISOString()}`);
+          this.logger.debug(`Ping successful at ${new Date().toISOString()}`);
         } else {
-          this.logger.warn(response, `✗ Ping failed`);
+          this.logger.warn(response, `Ping failed`);
         }
       } catch (error) {
         this.logger.error(error, 'Ping error');
@@ -147,11 +138,11 @@ class MarketBotIntegration {
         const response = await this.client.tradeReady(offerId);
 
         if (response.success) {
-          this.logger.info(`✓ Trade ${offerId} marked as ready`);
+          this.logger.info(`Trade ${offerId} marked as ready`);
         } else {
           this.logger.warn(
             { offerId, error: response.error },
-            `✗ Trade failed`
+            `Trade failed`
           );
         }
       } catch (error) {
@@ -166,11 +157,11 @@ class MarketBotIntegration {
   async monitorActiveTrades(): Promise<void> {
     try {
       this.logger.info('Fetching active trades...');
-      const tradesData = await this.client.getTrades(true);
+      const tradesData = await this.client.getTrades(false);
 
       if (tradesData.success) {
         this.logger.info(`Found ${tradesData.trades.length} active trades`);
-
+        
         
         }
       
@@ -227,7 +218,7 @@ class MarketBotIntegration {
       });
 
       if (response.success) {
-        this.logger.info({ item_id: response.id }, '✓ Purchase successful');
+        this.logger.info({ item_id: response.id }, 'Purchase successful');
 
         // Track the purchase
         const customId = `buy_${Date.now()}`;
@@ -238,7 +229,7 @@ class MarketBotIntegration {
       } else {
         this.logger.error(
           { error: response.error, code: response.code },
-          '✗ Purchase failed'
+          'Purchase failed'
         );
       }
     } catch (error) {
@@ -258,9 +249,9 @@ class MarketBotIntegration {
       for (const item of items) {
         const response = await this.client.addToSale(item.id, item.price, Currency.USD);
         if (response.success) {
-          this.logger.info({ item_id: response.item_id }, '✓ Item added to sale');
+          this.logger.info({ item_id: response.item_id }, 'Item added to sale');
         } else {
-          this.logger.error({ error: response.error }, '✗ Failed to add item');
+          this.logger.error({ error: response.error }, 'Failed to add item');
         }
       }
     } catch (error) {

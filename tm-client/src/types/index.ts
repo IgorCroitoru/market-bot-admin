@@ -1,4 +1,5 @@
 import type { AppLogger } from "@market-bot-admin/logging";
+import { ClientStatus } from "./schemas";
 
 /**
  * Market CSGO API Types
@@ -520,11 +521,5 @@ export interface BidAskResponse extends ApiBaseResponse {
 }
 
 export interface TestResponse extends ApiBaseResponse {
-  status: {
-    user_token: boolean;
-    trade_check: boolean;
-    site_online: boolean;
-    site_notmpban: boolean;
-    steam_web_api_key: boolean;
-  }
+  status: ClientStatus;
 }

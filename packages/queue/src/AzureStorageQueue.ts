@@ -18,7 +18,7 @@ export type AzureQueueConfig = {
    * Use this with DefaultAzureCredential / managed identity.
    * Example: mystorageaccount
    */
-  accountName?: string;
+  storageAccountName?: string;
 
   /**
    * Optional custom credential.
@@ -120,16 +120,16 @@ export class AzureStorageQueue<TMessage> {
       return;
     }
 
-    if (!config.accountName) {
+    if (!config.storageAccountName) {
       throw new Error(
-        "AzureStorageQueue requires either connectionString or accountName."
+        "AzureStorageQueue requires either connectionString or storageAccountName."
       );
     }
 
     const credential = config.credential ?? new DefaultAzureCredential();
 
     this.client = new QueueClient(
-      `https://${config.accountName}.queue.core.windows.net/${config.queueName}`,
+      `https://${config.storageAccountName}.queue.core.windows.net/${config.queueName}`,
       credential
     );
   }

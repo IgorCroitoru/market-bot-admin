@@ -17,3 +17,21 @@ export interface Storage<TItems extends Record<string, unknown> = any>
     key: TKey
   ): Promise<void>;
 }
+
+export interface ReadonlyTableStorage {
+  getData<T>(
+    key: string
+  ): Promise<T | null>;
+}
+
+export interface TableStorage
+  extends ReadonlyTableStorage {
+  saveData<T>(
+    key: string,
+    value: T
+  ): Promise<void>;
+
+  deleteData(
+    key: string
+  ): Promise<void>;
+}

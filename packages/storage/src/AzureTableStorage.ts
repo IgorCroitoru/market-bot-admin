@@ -1,7 +1,7 @@
 import { TableClient, odata, type TableEntity } from "@azure/data-tables";
 import { DefaultAzureCredential } from "@azure/identity";
 import type { TokenCredential } from "@azure/core-auth";
-import { Storage } from "./interfaces";
+import { Storage, TableStorage } from "./interfaces";
 import { required } from "./helper";
 
 type JsonStorageEntity = TableEntity<{
@@ -50,8 +50,8 @@ export interface AzureTableJsonStorageOptions {
   createTableIfNotExists?: boolean;
 }
 
-export class AzureTableJsonStorage<TItems extends Record<string, unknown>>
-  implements Storage<TItems>
+export class AzureTableJsonStorage
+  implements TableStorage
 {
   private readonly client: TableClient;
   private readonly partitionKey: string;
@@ -81,7 +81,7 @@ export class AzureTableJsonStorage<TItems extends Record<string, unknown>>
 
     this.client = new TableClient(endpoint, options.tableName, credential);
   }
-    async saveData<TKey extends keyof TItems & string>(key: TKey, value: TItems[TKey]): Promise<void> {
+    async saveData<T>(key: string, value: T): Promise<void> {
         await this.init();
 
         const entity: JsonStorageEntity = {
@@ -94,10 +94,8 @@ export class AzureTableJsonStorage<TItems extends Record<string, unknown>>
 
         await this.client.upsertEntity(entity, "Replace");
     }
-    async saveGenericData<T = any>(key: string, value: T): Promise<void> {
-        throw new Error("Method not implemented.");
-    }
-    async deleteData<TKey extends keyof TItems & string>(key: TKey): Promise<void> {
+ 
+    async deleteData(key: string): Promise<void> {
         await this.init();
 
         try {
@@ -108,7 +106,7 @@ export class AzureTableJsonStorage<TItems extends Record<string, unknown>>
             }
         }
     }
-    async getData<TKey extends keyof TItems & string>(key: TKey): Promise<TItems[TKey] | null> {
+    async getData<T>(key: string): Promise<T | null> {
         await this.init();
 
         try {
@@ -117,7 +115,7 @@ export class AzureTableJsonStorage<TItems extends Record<string, unknown>>
                 this.toRowKey(key)
             );
 
-            return JSON.parse(entity.value) as TItems[TKey];
+            return JSON.parse(entity.value) as T;
         } catch (error) {
         if (isNotFound(error)) {
             return null;
@@ -126,27 +124,6 @@ export class AzureTableJsonStorage<TItems extends Record<string, unknown>>
         throw error;
         }
     }
-    getGenericData<T>(key: string): Promise<T | null> {
-        throw new Error("Method not implemented.");
-    }
-
-  async listKeys(): Promise<Array<keyof TItems & string>> {
-    await this.init();
-
-    const keys: Array<keyof TItems & string> = [];
-
-    const entities = this.client.listEntities<JsonStorageEntity>({
-      queryOptions: {
-        filter: odata`PartitionKey eq ${this.partitionKey}`
-      }
-    });
-
-    for await (const entity of entities) {
-      keys.push(entity.key as keyof TItems & string);
-    }
-
-    return keys;
-  }
 
   private async init(): Promise<void> {
     if (!this.createTableIfNotExists) {

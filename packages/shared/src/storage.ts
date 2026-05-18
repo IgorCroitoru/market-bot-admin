@@ -15,5 +15,5 @@ export interface BotInventorySnapshot {
 }
 
 export type BotStorageItems = {
-    "token-cache": TokenCache;
+  "token-cache": TokenCache;
 }

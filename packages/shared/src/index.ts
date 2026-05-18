@@ -1,5 +1,6 @@
 // Export shared types and interfaces here
 export * from "./storage";
+export * from "./messages";
 
 export interface ApiRequest {
   userId?: string;
@@ -18,3 +19,6 @@ export interface User {
   name: string;
 }
 
+export type OfferStatusChangedMessage = {
+ 
+}
