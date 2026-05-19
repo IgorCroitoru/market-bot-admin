@@ -84,17 +84,17 @@ export interface ApiBaseResponse {
 
 
 
-export interface TradeOffer {
-  id: string;
-  created_at: string;
-  ui_status: string;
-  status: string;
-  trade_offer_id: string;
-  estimated_price: number;
-  suggested_price: number;
-  buyer_inventory?: string[];
-  seller_inventory?: string[];
-}
+// export interface TradeOffer {
+//   id: string;
+//   created_at: string;
+//   ui_status: string;
+//   status: string;
+//   trade_offer_id: string;
+//   estimated_price: number;
+//   suggested_price: number;
+//   buyer_inventory?: string[];
+//   seller_inventory?: string[];
+// }
 
 /**
  * Ping New Request/Response

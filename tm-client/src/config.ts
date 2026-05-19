@@ -34,11 +34,17 @@ const azureBlobStorageConfigSchema = z.object({
   AZURE_BLOB_CONTAINER_NAME: z.string()
 });
 
-const azureTableStorageConfigSchema = z.object({
-  AZURE_STORAGE_ACCOUNT_NAME: z.string().optional(),
-  AZURE_TABLE_NAME: z.string(),
-  AZURE_TABLE_PARTITION_KEY: z.string()
-});
+const azureTableStorageConfigSchema = z
+  .object({
+    AZURE_STORAGE_ACCOUNT_NAME: z.string().min(1),
+    AZURE_TRADE_TABLE_NAME: z.string().min(1),
+    AZURE_TABLE_PARTITION_KEY: z.string().min(1).optional(),
+  })
+  .transform((config) => ({
+    ...config,
+    AZURE_TABLE_PARTITION_KEY:
+      config.AZURE_TABLE_PARTITION_KEY ?? String(process.env.ACCOUNT_NAME),
+  }));
 
 export type ApiRuntimeZodConfig = z.infer<typeof envSchema>;
 export type AzureQueueZodConfig = z.infer<typeof azureQueueConfigSchema>;
@@ -82,7 +88,7 @@ export function loadAzureQueueOptionsFromEnv(env: NodeJS.ProcessEnv = process.en
 export function loadAzureTableStorageOptionsFromEnv(env: NodeJS.ProcessEnv = process.env): AzureTableJsonStorageOptions {
   const config = loadAzureTableStorageConfigFromEnv(env);
   return {
-    tableName: config.AZURE_TABLE_NAME,
+    tableName: config.AZURE_TRADE_TABLE_NAME,
     partitionKey: config.AZURE_TABLE_PARTITION_KEY,
     storageAccountName: config.AZURE_STORAGE_ACCOUNT_NAME
   }

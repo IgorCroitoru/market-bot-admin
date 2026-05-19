@@ -2,7 +2,10 @@ import { OfferGiveP2P } from ".";
 
 export interface TradeOffer {
     id: string;
-    offer: OfferGiveP2P;
+    offerP2P: OfferGiveP2P;
+    botId: string; //basically user id of the tm client wo buys the item
+    nik: string;
+    secret: string;
     offerId?: string | number;
     status: "pending" | "queued" | "sent" | "accepted" | "rejected" | "cancelled" | "failed";
     timestamp: number;
