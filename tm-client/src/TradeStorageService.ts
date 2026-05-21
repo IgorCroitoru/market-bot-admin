@@ -13,6 +13,16 @@ export class TradeStorageService {
         const rowKey = TradeStorageService.makeTradeRowKey(botId, secret);
         await this.storage.saveData(rowKey, tradeData);
     }
+    public async getTrade(botId: string, secret: string): Promise<TradeOffer | null> {
+        const rowKey = TradeStorageService.makeTradeRowKey(botId, secret);
+        const data = await this.storage.getData<TradeOffer>(rowKey);
+        return data;
+    }
+
+    public async deleteTrade(botId: string, secret: string): Promise<void> {
+        const rowKey = TradeStorageService.makeTradeRowKey(botId, secret);
+        await this.storage.deleteData(rowKey);
+    }
     static makeTradeRowKey(botId:string, secret:string): string{
         const secretHash = createHash("sha256")
         .update(secret)
@@ -20,4 +30,5 @@ export class TradeStorageService {
 
         return `bot_${botId}_secret_${secretHash}`;
     }
+    
 }

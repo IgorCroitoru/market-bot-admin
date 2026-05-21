@@ -46,3 +46,14 @@ module queue 'local-dev-queue.bicep' = {
     storageKeyVault
   ]
 }
+
+module tableStorage 'local-dev-table.storage.bicep' = {
+  name: 'tableStorage'
+  params: {
+    storageAccountName: storageAccountName
+    developerObjectId: developerObjectId
+  }
+  dependsOn: [
+    storageKeyVault
+  ]
+}

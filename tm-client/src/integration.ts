@@ -15,6 +15,7 @@ import {
   MessageDefaultBody, 
   TradeStatusChangedMessage, 
   BotStatusChangedMessage } from '@market-bot-admin/shared';
+import { TradeStorageService } from './TradeStorageService';
 
 
 type Messages = MessageDefaultBody & (TradeStatusChangedMessage | BotStatusChangedMessage);
@@ -28,7 +29,7 @@ class MarketBotIntegration {
   private azureQueue: AzureStorageQueue<Messages>;
   private tokensCache: TokenCache | null = null;
   private readonly botStorage: ReadonlyStorage<BotStorageItems>;
-  private readonly tradesStorage: TableStorage;
+  private readonly tradesService: TradeStorageService;
   constructor() {
     this.logger = logger; 
     const options = loadApiOptionsFromEnv(process.env);
@@ -41,7 +42,7 @@ class MarketBotIntegration {
 
     this.botStorage = new AzureBlobStorage(azureBlobStorageConfig);
      
-    this.tradesStorage = new AzureTableJsonStorage(azureTableStorageConfig);
+    this.tradesService = new TradeStorageService(new AzureTableJsonStorage(azureTableStorageConfig));
   }
 
   get azureQueueClient(): AzureStorageQueue<Messages> {
