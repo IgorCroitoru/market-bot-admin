@@ -55,6 +55,6 @@ jobs:
           action: upload
           app_location: frontend
           api_location: api
-          skip_app_build: true
-          skip_api_build: true
-          output_location: dist
+          # skip_app_build: true
+          # skip_api_build: true
+          # output_location: dist
