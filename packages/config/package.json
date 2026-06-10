@@ -1,5 +1,5 @@
 {
-  "name": "@market-bot-admin/shared",
+  "name": "@market-bot-admin/config",
   "version": "0.0.0",
   "private": true,
   "type": "commonjs",
@@ -16,10 +16,8 @@
     "build": "tsc -p tsconfig.json",
     "watch": "tsc -w -p tsconfig.json"
   },
-  "devDependencies": {
-    "@types/steamcommunity": "^3.50.0"
-  },
   "dependencies": {
-    "steamcommunity": "^3.50.0"
+    "zod": "^4.4.1",
+    "dotenv": "^17.4.2"
   }
 }
