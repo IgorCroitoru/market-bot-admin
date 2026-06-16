@@ -5,7 +5,7 @@ param location string = resourceGroup().location
 param storageAccountName string
 
 @description('Blob container used by AzureBotStorage.')
-param blobContainerName string = 'steam-bot'
+param blobContainerName string = 'cs-tm-bot'
 
 @description('Globally unique Key Vault name.')
 param keyVaultName string
@@ -19,7 +19,7 @@ param queueName string
 @description('Tags.')
 param tags object = {
   environment: 'local-dev'
-  workload: 'market-cloud-bot'
+  workload: 'cs-tm-bot'
   managedBy: 'bicep'
 }
 

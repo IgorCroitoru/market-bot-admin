@@ -16,7 +16,7 @@ param runtimeIdentityId string
 @description('Tags.')
 param tags object = {
   environment: 'cloud-dev'
-  workload: 'market-cloud-bot'
+  workload: 'cs-tm-bot'
   managedBy: 'bicep'
 }
 

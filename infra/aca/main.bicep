@@ -1,8 +1,12 @@
-@description('Azure region for all resources.')
-param location string
+@description('Per-resource locations for the ACA stack.')
+param locations object
 
 @description('Container App runtime identity name.')
 param runtimeIdentityName string
+
+param developerObjectId string
+
+param developerPermissionToWriteKv bool = false
 
 @description('Key Vault name.')
 param keyVaultName string
@@ -28,74 +32,8 @@ param useAcrImageOnFirstDeploy bool = true
 @description('Public bootstrap image used when ACR has no image yet.')
 param bootstrapImage string = 'mcr.microsoft.com/azuredocs/containerapps-helloworld:latest'
 
-@description('Environment name.')
-param environmentName string
-
-@description('Bot poll interval in milliseconds.')
-param botPollIntervalMs string 
-
-@description('Bot cancel time in milliseconds.')
-param botCancelTimeMs string 
-
-@description('Bot environment.')
-param botEnv string = environmentName
-
-@description('Log level.')
-param logLevel string = 'info'
-
-@description('Steam API domain.')
-param steamApiDomain string = 'localhost'
-
-@description('Steam token platform.')
-param steamTokenPlatform string = 'mobile'
-
-@description('Steam guard code, if required. Leave empty when not used.')
-param steamGuardCode string = ''
-
-@description('Bot login timeout in milliseconds.')
-param botLoginTimeoutMs string
-
-@description('Maximum login retries.')
-param botMaxLoginRetries string
-
-@description('Delay between login retries in milliseconds.')
-param botLoginRetryDelayMs string
-
-@description('Maximum login attempts within the configured period.')
-param botMaxLoginAttemptsWithinPeriod string = '3'
-
-@description('Login attempt period in milliseconds.')
-param botLoginAttemptPeriodMs string
-
-@description('Offer request TTL in milliseconds.')
-param botOfferRequestTtlMs string
-
-@description('Maximum offer retries.')
-param botOfferMaxRetries string
-
-@description('Offer retry base delay in milliseconds.')
-param botOfferRetryBaseDelayMs string 
-
-@description('Maximum offer retry delay in milliseconds.')
-param botOfferRetryMaxDelayMs string
-
-@description('Token refresh interval in milliseconds.')
-param botTokenRefreshIntervalMs string
-
-@description('Token refresh skew in milliseconds.')
-param botTokenRefreshSkewMs string
-
-@description('Access token refresh skew in milliseconds.')
-param botAccessTokenRefreshSkewMs string
-
-@description('Refresh token renewal window in milliseconds.')
-param botRefreshTokenRenewalWindowMs string
-
-@description('Bot inventory poll interval in milliseconds.')
-param botInventoryPollIntervalMs string
-
-@description('Bot storage driver.')
-param storageDriver string
+@description('Bot container environment variables.')
+param botEnv object
 
 @description('Whether Container App ingress is enabled.')
 param ingressEnabled bool = false
@@ -125,7 +63,7 @@ module runtimeIdentity './user-assigned-identity.bicep' = {
   name: 'id-runtime-${uniqueString(resourceGroup().id, runtimeIdentityName)}'
   params: {
     identityName: runtimeIdentityName
-    location: location
+    location: locations.runtimeIdentity
     tags: commonTags
   }
 }
@@ -134,7 +72,7 @@ module keyVault './key-vault.bicep' = {
   name: 'kv-${uniqueString(resourceGroup().id, keyVaultName)}'
   params: {
     keyVaultName: keyVaultName
-    location: location
+    location: locations.runtimeKeyVault
     tags: commonTags
   }
 }
@@ -155,6 +93,8 @@ module keyVaultSecretsUserForRuntime './key-vault-role-assignment.bicep' = {
     keyVault
   ]
   params: {
+    developerPermissionToWrite: developerPermissionToWriteKv
+    developerObjectId: developerObjectId
     keyVaultName: keyVaultName
     principalId: runtimeIdentity.outputs.principalId
     principalType: 'ServicePrincipal'
@@ -166,7 +106,7 @@ module logAnalytics './log-analytics.bicep' = {
   name: 'log-${uniqueString(resourceGroup().id, logAnalyticsWorkspaceName)}'
   params: {
     workspaceName: logAnalyticsWorkspaceName
-    location: location
+    location: locations.logAnalytics
     retentionInDays: 30
     tags: commonTags
   }
@@ -187,7 +127,7 @@ module containerAppsEnvironment './aca-environment.bicep' = {
   name: 'cae-${uniqueString(resourceGroup().id, containerAppsEnvironmentName)}'
   params: {
     environmentName: containerAppsEnvironmentName
-    location: location
+    location: locations.containerAppsEnvironment
     logAnalyticsCustomerId: logAnalytics.outputs.customerId
     logAnalyticsSharedKey: logAnalyticsWorkspace.listKeys().primarySharedKey
     tags: commonTags
@@ -208,34 +148,13 @@ module containerApp './aca.bicep' = {
     blobContainerName: blobContainerName
     storageAccountName: storageAccountName
     containerAppName: containerAppName
-    storageDriver: storageDriver
-    botInventoryPollIntervalMs: botInventoryPollIntervalMs
-    location: location
+    location: locations.containerApp
     managedEnvironmentId: containerAppsEnvironment.outputs.id
     image: selectedImage
     runtimeIdentityId: runtimeIdentity.outputs.id
     acrLoginServer: acr.properties.loginServer
     keyVaultUri: keyVault.outputs.vaultUri
     botEnv: botEnv
-    botPollIntervalMs: botPollIntervalMs
-    botCancelTimeMs: botCancelTimeMs
-    logLevel: logLevel
-    steamApiDomain: steamApiDomain
-    steamTokenPlatform: steamTokenPlatform
-    steamGuardCode: steamGuardCode
-    botLoginTimeoutMs: botLoginTimeoutMs
-    botMaxLoginRetries: botMaxLoginRetries
-    botLoginRetryDelayMs: botLoginRetryDelayMs
-    botMaxLoginAttemptsWithinPeriod: botMaxLoginAttemptsWithinPeriod
-    botLoginAttemptPeriodMs: botLoginAttemptPeriodMs
-    botOfferRequestTtlMs: botOfferRequestTtlMs
-    botOfferMaxRetries: botOfferMaxRetries
-    botOfferRetryBaseDelayMs: botOfferRetryBaseDelayMs
-    botOfferRetryMaxDelayMs: botOfferRetryMaxDelayMs
-    botTokenRefreshIntervalMs: botTokenRefreshIntervalMs
-    botTokenRefreshSkewMs: botTokenRefreshSkewMs
-    botAccessTokenRefreshSkewMs: botAccessTokenRefreshSkewMs
-    botRefreshTokenRenewalWindowMs: botRefreshTokenRenewalWindowMs
     ingressEnabled: ingressEnabled
     externalIngress: externalIngress
     targetPort: targetPort
@@ -269,7 +188,7 @@ module botStorage './bot-storage.bicep' = {
   params: {
     storageAccountName: storageAccountName
     blobContainerName: blobContainerName
-    location: location
+    location: locations.runtimeStorage
     tags: commonTags
     runtimeIdentityId: runtimeIdentity.outputs.id
     runtimeIdentityPrincipalId: runtimeIdentity.outputs.principalId

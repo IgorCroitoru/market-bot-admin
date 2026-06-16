@@ -43,76 +43,8 @@ param acrLoginServer string
 @description('Key Vault URI, for example https://myvault.vault.azure.net/.')
 param keyVaultUri string
 
-@description('Bot environment.')
-param botEnv string = 'dev'
-
-@description('Log level.')
-param logLevel string = 'info'
-
-@description('Steam API domain.')
-param steamApiDomain string = 'localhost'
-
-@description('Bot storage driver.')
-param storageDriver string
-
-@allowed([
-  'mobile'
-  'web'
-  'client'
-])
-@description('Steam token platform.')
-param steamTokenPlatform string = 'mobile'
-
-@description('Bot poll interval in milliseconds.')
-param botPollIntervalMs string = '30000'
-
-@description('Bot cancel time in milliseconds.')
-param botCancelTimeMs string = '600000'
-
-@description('Steam guard code, if required. Leave empty when not used.')
-param steamGuardCode string = ''
-
-@description('Bot login timeout in milliseconds.')
-param botLoginTimeoutMs string
-
-@description('Maximum login retries.')
-param botMaxLoginRetries string
-
-@description('Delay between login retries in milliseconds.')
-param botLoginRetryDelayMs string
-
-@description('Maximum login attempts within the configured period.')
-param botMaxLoginAttemptsWithinPeriod string 
-
-@description('Login attempt period in milliseconds.')
-param botLoginAttemptPeriodMs string 
-
-@description('Bot inventory poll interval in milliseconds.')
-param botInventoryPollIntervalMs string
-
-@description('Offer request TTL in milliseconds.')
-param botOfferRequestTtlMs string 
-
-@description('Maximum offer retries.')
-param botOfferMaxRetries string
-
-@description('Offer retry base delay in milliseconds.')
-param botOfferRetryBaseDelayMs string
-
-@description('Maximum offer retry delay in milliseconds.')
-param botOfferRetryMaxDelayMs string
-
-@description('Token refresh interval in milliseconds.')
-param botTokenRefreshIntervalMs string 
-
-@description('Token refresh skew in milliseconds.')
-param botTokenRefreshSkewMs string 
-
-@description('Access token refresh skew in milliseconds.')
-param botAccessTokenRefreshSkewMs string 
-
-@description('Refresh token renewal window in milliseconds.')
-param botRefreshTokenRenewalWindowMs string
+@description('Bot container environment variables.')
+param botEnv object
 
 @description('Whether ingress is enabled.')
 param ingressEnabled bool = false
@@ -198,11 +130,11 @@ resource containerApp 'Microsoft.App/containerApps@2024-03-01' = {
             }
             {
               name: 'BOT_ENV'
-              value: botEnv
+              value: botEnv.environment
             }
             {
               name: 'BOT_STORAGE_DRIVER'
-              value: storageDriver
+              value: botEnv.storageDriver
             }
             {
               name: 'AZURE_BOT_CONTAINER_NAME'
@@ -214,7 +146,7 @@ resource containerApp 'Microsoft.App/containerApps@2024-03-01' = {
             }
             {
               name: 'LOG_LEVEL'
-              value: logLevel
+              value: botEnv.logLevel
             }
             {
               name: 'STEAM_ACCOUNT_NAME'
@@ -230,79 +162,79 @@ resource containerApp 'Microsoft.App/containerApps@2024-03-01' = {
             }
             {
               name: 'STEAM_GUARD_CODE'
-              value: steamGuardCode
+              value: botEnv.steamGuardCode
             }
             {
               name: 'STEAM_API_DOMAIN'
-              value: steamApiDomain
+              value: botEnv.steamApiDomain
             }
             {
               name: 'STEAM_TOKEN_PLATFORM'
-              value: steamTokenPlatform
+              value: botEnv.steamTokenPlatform
             }
             {
               name: 'BOT_POLL_INTERVAL_MS'
-              value: botPollIntervalMs
+              value: botEnv.botPollIntervalMs
             }
             {
               name: 'BOT_CANCEL_TIME_MS'
-              value: botCancelTimeMs
+              value: botEnv.botCancelTimeMs
             }
             {
               name: 'BOT_LOGIN_TIMEOUT_MS'
-              value: botLoginTimeoutMs
+              value: botEnv.botLoginTimeoutMs
             }
             {
               name: 'BOT_MAX_LOGIN_RETRIES'
-              value: botMaxLoginRetries
+              value: botEnv.botMaxLoginRetries
             }
             {
               name: 'BOT_LOGIN_RETRY_DELAY_MS'
-              value: botLoginRetryDelayMs
+              value: botEnv.botLoginRetryDelayMs
             }
             {
               name: 'BOT_MAX_LOGIN_ATTEMPTS_WITHIN_PERIOD'
-              value: botMaxLoginAttemptsWithinPeriod
+              value: botEnv.botMaxLoginAttemptsWithinPeriod
             }
             {
               name: 'BOT_INVENTORY_POLL_INTERVAL_MS'
-              value: botInventoryPollIntervalMs
+              value: botEnv.botInventoryPollIntervalMs
             }
             {
               name: 'BOT_LOGIN_ATTEMPT_PERIOD_MS'
-              value: botLoginAttemptPeriodMs
+              value: botEnv.botLoginAttemptPeriodMs
             }
             {
               name: 'BOT_OFFER_REQUEST_TTL_MS'
-              value: botOfferRequestTtlMs
+              value: botEnv.botOfferRequestTtlMs
             }
             {
               name: 'BOT_OFFER_MAX_RETRIES'
-              value: botOfferMaxRetries
+              value: botEnv.botOfferMaxRetries
             }
             {
               name: 'BOT_OFFER_RETRY_BASE_DELAY_MS'
-              value: botOfferRetryBaseDelayMs
+              value: botEnv.botOfferRetryBaseDelayMs
             }
             {
               name: 'BOT_OFFER_RETRY_MAX_DELAY_MS'
-              value: botOfferRetryMaxDelayMs
+              value: botEnv.botOfferRetryMaxDelayMs
             }
             {
               name: 'BOT_TOKEN_REFRESH_INTERVAL_MS'
-              value: botTokenRefreshIntervalMs
+              value: botEnv.botTokenRefreshIntervalMs
             }
             {
               name: 'BOT_TOKEN_REFRESH_SKEW_MS'
-              value: botTokenRefreshSkewMs
+              value: botEnv.botTokenRefreshSkewMs
             }
             {
               name: 'BOT_ACCESS_TOKEN_REFRESH_SKEW_MS'
-              value: botAccessTokenRefreshSkewMs
+              value: botEnv.botAccessTokenRefreshSkewMs
             }
             {
               name: 'BOT_REFRESH_TOKEN_RENEWAL_WINDOW_MS'
-              value: botRefreshTokenRenewalWindowMs
+              value: botEnv.botRefreshTokenRenewalWindowMs
             }
           ]
         }

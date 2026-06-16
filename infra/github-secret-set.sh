@@ -1,4 +1,4 @@
-RG_NAME="rg-market-cloud-bot-dev"
+RG_NAME="rg-cs-tm-bot-dev"
 DEPLOYMENT_NAME="acr-bootstrap-dev"
 
 CLIENT_ID="$(az deployment group show \

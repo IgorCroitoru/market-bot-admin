@@ -10,16 +10,16 @@ param location string = resourceGroup().location
 param environment string = 'dev'
 
 @description('Short app name used for resource names and tags.')
-param appName string = 'marketbot'
+param appName string = 'cs-tm-bot'
 
 @description('Storage account name. Must be globally unique, 3-24 lowercase letters and numbers.')
-param storageAccountName string = take('${toLower(replace(appName, '-', ''))}${environment}${uniqueString(resourceGroup().id)}', 24)
+param storageAccountName string = take('st${toLower(replace(appName, '-', ''))}${environment}${uniqueString(resourceGroup().id)}', 24)
 
 @description('Blob container used by AzureBotStorage for poll data and other JSON state.')
-param blobContainerName string = 'steam-bot'
+param blobContainerName string = appName
 
 @description('Key Vault name. Must be globally unique, 3-24 alphanumeric characters and hyphens.')
-param keyVaultName string = take('${appName}-${environment}-${uniqueString(resourceGroup().id)}', 24)
+param keyVaultName string = take('kv-${appName}-${environment}-${uniqueString(resourceGroup().id)}', 24)
 
 @description('Object IDs for managed identities or users that should read/write bot blobs and secrets.')
 param botPrincipalObjectIds array = []
@@ -30,7 +30,7 @@ param allowSharedKeyAccess bool = false
 var tags = {
   app: appName
   environment: environment
-  component: 'steam-bot-storage'
+  component: 'bot-storage'
 }
 
 var storageBlobDataContributorRoleId = subscriptionResourceId(

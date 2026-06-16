@@ -1,17 +1,17 @@
-using 'main.acr.bicep'
+using 'main.bicep'
 
 param location = 'westeurope'
 
-// param staticWebAppName = 'market-cloud-bot-dev'
+// param staticWebAppName = 'cs-tm-bot-dev'
 
-param projectName = 'trading-bot'
+param projectName = 'cs-tm-bot'
 param environmentName = 'dev'
 
-param acrName = 'tradingbotacrdev001'
+param acrName = 'acrcstmbotdev'
 param acrSku = 'Basic'
 param acrPublicNetworkAccess = 'Enabled'
 
-param pipelineIdentityName = 'id-trading-bot-dev-github-acrpush'
+param pipelineIdentityName = 'id-cs-tm-bot-dev-github-acrpush'
 
 param githubOwner = 'IgorCroitoru'
 param githubRepo = 'market-bot-admin'

@@ -1,6 +1,11 @@
 @description('Existing Key Vault name.')
 param keyVaultName string
 
+@description('Developer id')
+param developerObjectId string
+
+param developerPermissionToWrite bool = false
+
 @description('Principal/object ID receiving the role.')
 param principalId string
 
@@ -38,6 +43,19 @@ resource roleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
     roleDefinitionId: roleDefinitionResourceId
     principalId: principalId
     principalType: principalType
+  }
+}
+
+resource secretsOfficerRole 'Microsoft.Authorization/roleAssignments@2022-04-01' = if(developerPermissionToWrite) {
+  name: guid(keyVault.id, developerObjectId, 'KeyVaultSecretsOfficer')
+  scope: keyVault
+  properties: {
+    principalId: developerObjectId
+    principalType: 'User'
+    roleDefinitionId: subscriptionResourceId(
+      'Microsoft.Authorization/roleDefinitions',
+      'b86a8fe4-44ce-4948-aee5-eccb2c155cd7' // Key Vault Secrets Officer
+    )
   }
 }
 
