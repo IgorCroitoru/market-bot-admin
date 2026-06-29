@@ -12,13 +12,13 @@ import {AzureBlobStorage, AzureTableJsonStorage, ReadonlyStorage, ReadonlyTableS
 import { 
   BotStorageItems, 
   TokenCache, 
-  MessageDefaultBody, 
-  TradeStatusChangedMessage, 
+  IncomingTradeTaskMessage,
+  TradeStatusQueueMessage,
   BotStatusChangedMessage } from '@market-bot-admin/shared';
 import { TradeStorageService } from './TradeStorageService';
 
 
-type Messages = MessageDefaultBody & (TradeStatusChangedMessage | BotStatusChangedMessage);
+type Messages = IncomingTradeTaskMessage | TradeStatusQueueMessage | BotStatusChangedMessage;
 
 class MarketBotIntegration {
   private client: MarketClient;

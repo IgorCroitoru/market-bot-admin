@@ -1,24 +1,38 @@
 import { EventEmitter } from "node:events";
 import SteamCommunity from "steamcommunity";
 import SteamTotp from "steam-totp";
-import TradeOfferManager from "steam-tradeoffer-manager";
+import TradeOfferManager, { SteamID } from "steam-tradeoffer-manager";
 import type TradeOffer from "steam-tradeoffer-manager/lib/classes/TradeOffer";
 import {
   EAuthSessionGuardType,
   EAuthTokenPlatformType,
   ESessionPersistence,
-  LoginSession
+  LoginSession,
 } from "steam-session";
 import type { AppLogger } from "@market-bot-admin/logging";
 import type { BotOptions, SteamTokenPlatform } from "./IOptions";
 import type { BotStorage } from "./Persistence";
 import type { PollData } from "./PollData";
-import { getSteamLoginSecureJwt, getJwtExpirationDate, isJwtExpiringWithin, isJwtUsable } from "./jwt";
+import {
+  getSteamLoginSecureJwt,
+  getJwtExpirationDate,
+  isJwtExpiringWithin,
+  isJwtUsable,
+} from "./jwt";
 import { isRetriableError, withRetries, delay } from "./retry";
 import { logger as defaultLogger } from "./logger";
 import { createBotStorageFromEnv } from "./storage";
 import { TokenCache } from "./storage/AzureBotStorage";
 import CEconItem from "steamcommunity/classes/CEconItem";
+import type {
+  TradeItem,
+  TradeRequest as SendTradeOfferRequest,
+} from "@market-bot-admin/shared";
+
+export type {
+  TradeItem,
+  TradeRequest as SendTradeOfferRequest,
+} from "@market-bot-admin/shared";
 
 export type BotStatus =
   | "idle"
@@ -48,30 +62,8 @@ export interface BotHealthSnapshot {
   updatedAt: number;
 }
 
-export interface TradeItem {
-  appid: number;
-  contextid: string | number;
-  assetid: string | number;
-  id?: string;
-  amount: number;
-  [key: string]: unknown;
-}
-
-export interface SendTradeOfferRequest {
-  partner: string;
-  token?: string;
-  message?: string;
-  requestId?: string;
-  createdAt?: number | string | Date;
-  timestamp?: number | string | Date;
-  itemsToGive?: TradeItem[];
-  itemsToReceive?: TradeItem[];
-  data?: Record<string, unknown>;
-}
-
 export interface SentTradeOffer {
   offer: TradeOffer;
-  offerId: string | undefined;
   status: "pending" | "sent";
 }
 
@@ -114,14 +106,14 @@ type TradeOfferQueueItem = {
 const permanentTradeOfferMessageParts = [
   "can only be sent to friends",
   "is not available to trade",
-  "maximum number of items allowed in inventory"
+  "maximum number of items allowed in inventory",
 ];
 
 const permanentTradeOfferCauses = new Set([
   "TradeBan",
   "NewDevice",
   "TargetCannotTrade",
-  "OfferLimitExceeded"
+  "OfferLimitExceeded",
 ]);
 
 const retriableTradeOfferCauses = new Set(["ItemServerUnavailable"]);
@@ -192,7 +184,7 @@ export class Bot extends EventEmitter {
     refreshToken: null,
     accessToken: null,
     sessionCookies: null,
-    updatedAt: 0
+    updatedAt: 0,
   };
   // private refreshToken: string | null = null;
   // private accessToken: string | null = null;
@@ -231,14 +223,14 @@ export class Bot extends EventEmitter {
       steamGuardTokenSubmitAttempts: 3,
       steamGuardTokenSubmitDelayMs: 1500,
       tokenPlatform: "mobile",
-      ...options
+      ...options,
     };
 
     this.log = options.logger ?? defaultLogger;
     this.storage =
       options.storage ??
       createBotStorageFromEnv({
-        accountName: options.accountName
+        accountName: options.accountName,
       });
 
     this.community = new SteamCommunity();
@@ -249,7 +241,7 @@ export class Bot extends EventEmitter {
       pollInterval: -1,
       cancelTime: this.options.cancelTimeMs,
       useAccessToken: true,
-      savePollData: false
+      savePollData: false,
     });
   }
 
@@ -265,16 +257,21 @@ export class Bot extends EventEmitter {
     return this.inventoryCache;
   }
 
-  private async updateInventoryCache(inventory: BotInventorySnapshot): Promise<void> {
+  private async updateInventoryCache(
+    inventory: BotInventorySnapshot,
+  ): Promise<void> {
     this.inventoryCache = inventory;
     await this.storage.saveInventorySnapshot(inventory).catch((error) => {
-      this.log.warn({ err: error }, "Failed to save inventory snapshot to storage");
+      this.log.warn(
+        { err: error },
+        "Failed to save inventory snapshot to storage",
+      );
     });
   }
   private async updateTokenCache(patch: Partial<TokenCache>): Promise<void> {
     this._tokenCache = {
       ...this._tokenCache,
-      ...patch
+      ...patch,
     };
     await this.storage.saveTokenCache(this._tokenCache).catch((error) => {
       this.log.warn({ err: error }, "Failed to save token cache to storage");
@@ -288,7 +285,7 @@ export class Bot extends EventEmitter {
       processingQueue: this.processingTradeOfferQueue,
       lastError: this.lastErrors[0] ?? null,
       lastErrors: [...this.lastErrors],
-      updatedAt: this.healthUpdatedAt
+      updatedAt: this.healthUpdatedAt,
     };
   }
 
@@ -315,9 +312,9 @@ export class Bot extends EventEmitter {
       this.log.info(
         {
           accountName: this.options.accountName,
-          pollIntervalMs: this.options.pollIntervalMs
+          pollIntervalMs: this.options.pollIntervalMs,
         },
-        "Steam bot is ready"
+        "Steam bot is ready",
       );
       void this.refreshInventoryCache("startup");
       // Resume processing any queued trade offers now that the bot is ready.
@@ -346,7 +343,10 @@ export class Bot extends EventEmitter {
     this.ready = false;
     this.setStatus("stopped");
     this.emit("ready", false);
-    this.log.info({ accountName: this.options.accountName }, "Steam bot stopped");
+    this.log.info(
+      { accountName: this.options.accountName },
+      "Steam bot stopped",
+    );
   }
 
   async ensureFreshSession(reason = "scheduled token check"): Promise<void> {
@@ -357,25 +357,31 @@ export class Bot extends EventEmitter {
     return this.sessionRefreshInFlight;
   }
 
-  async refreshInventoryCache(reason = "scheduled inventory check"): Promise<void> {
-    this.inventoryRefreshInFlight ??= this.doRefreshInventoryCache(reason).finally(() => {
+  async refreshInventoryCache(
+    reason = "scheduled inventory check",
+  ): Promise<void> {
+    this.inventoryRefreshInFlight ??= this.doRefreshInventoryCache(
+      reason,
+    ).finally(() => {
       this.inventoryRefreshInFlight = null;
     });
 
     return this.inventoryRefreshInFlight;
   }
 
-  async sendTradeOffer(request: SendTradeOfferRequest): Promise<SentTradeOffer> {
+  async sendTradeOffer(
+    request: SendTradeOfferRequest,
+  ): Promise<SentTradeOffer> {
     // Always accept trade offer requests and enqueue them.
     // Processing will only run when the bot is ready.
 
     const createdAtMs = normalizeRequestTimestamp(
-      request.createdAt ?? request.timestamp ?? Date.now()
+      request.createdAt ?? request.timestamp ?? Date.now(),
     );
     const deadlineMs = createdAtMs + this.options.offerRequestTtlMs;
 
     if (Date.now() > deadlineMs) {
-      throw this.createTradeOfferDeadlineError(request, createdAtMs, deadlineMs, 0);
+      throw this.createTradeOfferDeadlineError(createdAtMs, deadlineMs, 0);
     }
 
     return new Promise<SentTradeOffer>((resolve, reject) => {
@@ -386,23 +392,25 @@ export class Bot extends EventEmitter {
         enqueuedAtMs: Date.now(),
         attempts: 0,
         resolve,
-        reject
+        reject,
       });
 
       this.log.info(
         {
-          requestId: request.requestId,
           partner: request.partner,
           queueLength: this.tradeOfferQueue.length,
-          deadlineAt: new Date(deadlineMs).toISOString()
+          deadlineAt: new Date(deadlineMs).toISOString(),
         },
-        "Trade offer queued"
+        "Trade offer queued",
       );
 
       if (this.ready) {
         this.processTradeOfferQueue();
       } else {
-        this.log.debug({ queueLength: this.tradeOfferQueue.length }, "Bot not ready; trade offer queued for later processing");
+        this.log.debug(
+          { queueLength: this.tradeOfferQueue.length },
+          "Bot not ready; trade offer queued for later processing",
+        );
       }
     });
   }
@@ -442,7 +450,7 @@ export class Bot extends EventEmitter {
   }
 
   private async processTradeOfferQueueItem(
-    item: TradeOfferQueueItem
+    item: TradeOfferQueueItem,
   ): Promise<SentTradeOffer> {
     while (true) {
       this.assertTradeOfferWithinDeadline(item);
@@ -452,11 +460,10 @@ export class Bot extends EventEmitter {
         const result = await this.sendTradeOfferOnce(item.request);
         this.log.info(
           {
-            requestId: item.request.requestId,
-            offerId: result.offerId,
-            attempts: item.attempts
+            offerId: result.offer.id,
+            attempts: item.attempts,
           },
-          "Queued trade offer sent"
+          "Queued trade offer sent",
         );
         return result;
       } catch (error) {
@@ -468,12 +475,11 @@ export class Bot extends EventEmitter {
           this.log.warn(
             {
               err: tradeError,
-              requestId: item.request.requestId,
               partner: item.request.partner,
               attempts: item.attempts,
-              reason: decision.reason
+              reason: decision.reason,
             },
-            "Trade offer failed without retry"
+            "Trade offer failed without retry",
           );
           throw error;
         }
@@ -481,15 +487,14 @@ export class Bot extends EventEmitter {
         this.log.warn(
           {
             err: tradeError,
-            requestId: item.request.requestId,
             partner: item.request.partner,
             attempts: item.attempts,
             nextAttempt: item.attempts + 1,
             delayMs: decision.delayMs,
             deadlineAt: new Date(item.deadlineMs).toISOString(),
-            reason: decision.reason
+            reason: decision.reason,
           },
-          "Retrying trade offer send"
+          "Retrying trade offer send",
         );
 
         if (decision.delayMs > 0) {
@@ -499,12 +504,14 @@ export class Bot extends EventEmitter {
     }
   }
 
-  private sendTradeOfferOnce(request: SendTradeOfferRequest): Promise<SentTradeOffer> {
+  private sendTradeOfferOnce(
+    request: SendTradeOfferRequest,
+  ): Promise<SentTradeOffer> {
     return new Promise<SentTradeOffer>((resolve, reject) => {
       try {
         if (!request.itemsToGive || request.itemsToGive.length === 0) {
           throw new Error(
-            "Broken trade request: At least one item to give is required to send a trade offer"
+            "Broken trade request: At least one item to give is required to send a trade offer",
           );
         }
 
@@ -514,29 +521,37 @@ export class Bot extends EventEmitter {
 
         const inventory = this.inventoryCache.inventory;
 
-        const itemsToGive = request.itemsToGive.map((requestedItem: TradeItem) => {
-          const inventoryItem = inventory.find(
-            (item) => item.assetid === requestedItem.assetid
-          );
-
-          if (!inventoryItem) {
-            throw new Error(
-              `Inventory item not found: assetid=${requestedItem.assetid}`
+        const itemsToGive = request.itemsToGive.map(
+          (requestedItem: TradeItem) => {
+            const inventoryItem = inventory.find(
+              (item) => item.assetid === requestedItem.assetid,
             );
-          }
 
-          if (inventoryItem.amount < requestedItem.amount) {
-            throw new Error(
-              `Not enough amount for assetid=${requestedItem.assetid}. Requested ${requestedItem.amount}, available ${inventoryItem.amount}`
+            if (!inventoryItem) {
+              throw new Error(
+                `Inventory item not found: assetid=${requestedItem.assetid}`,
+              );
+            }
+
+            if (inventoryItem.amount < requestedItem.amount) {
+              throw new Error(
+                `Not enough amount for assetid=${requestedItem.assetid}. Requested ${requestedItem.amount}, available ${inventoryItem.amount}`,
+              );
+            }
+
+            const reconstructedItem = new CEconItem(
+              inventoryItem,
+              inventoryItem.descriptions,
+              inventoryItem.contextid,
             );
-          }
+            reconstructedItem.amount = requestedItem.amount; // Override amount with requested amount for the trade offer.
+            return reconstructedItem;
+          },
+        );
 
-          const reconstructedItem = new CEconItem(inventoryItem, inventoryItem.descriptions, inventoryItem.contextid);
-          reconstructedItem.amount = requestedItem.amount; // Override amount with requested amount for the trade offer.
-          return reconstructedItem
-        });
+        const sid = SteamID.fromIndividualAccountID(request.partner);
 
-        const offer = this.tradeManager.createOffer(request.partner, request.token);
+        const offer = this.tradeManager.createOffer(sid, request.token);
 
         offer.addMyItems(itemsToGive);
 
@@ -554,17 +569,67 @@ export class Bot extends EventEmitter {
             return;
           }
 
-          this.log.info(
-            {
-              requestId: request.requestId,
-              offerId: offer.id,
-              partner: request.partner,
-              status
-            },
-            "Trade offer sent"
-          );
+          if (status === "pending") {
+            this.log.info(
+              {
+                offerId: offer.id,
+                partner: request.partner,
+                status,
+              },
+              "Trade offer sent but requires confirmation",
+            );
 
-          resolve({ offer, offerId: offer.id, status });
+            if (this.options.identitySecret) {
+              this.community.acceptConfirmationForObject(
+                this.options.identitySecret,
+                offer.id,
+                (cb) => {
+                  if (cb) {
+                    this.log.error(
+                      {
+                        offerId: offer.id,
+                        cause: cb.cause,
+                        message: cb.message,
+                        name: cb.name,
+                        stack: cb.stack,
+                      },
+                      "Error confirming offer",
+                    );
+                    offer.cancel((err) => {
+                      if (err) {
+                        this.log.error({offerId: offer.id}, "Error cancelling offer after unsuccessful confirmation")
+                        reject(err);
+                        return;
+                      }
+                    });
+                    reject(
+                      cb ||
+                        new Error(
+                          `Steam confirmation failed for offer ${offer.id}`,
+                        ),
+                    );
+                    return;
+                  } else {
+                    this.log.info({ offerId: offer.id }, "Confirmed offer");
+                    resolve({ offer, status });
+                    return;
+                  }
+                },
+              );
+            }
+          } else {
+            this.log.info(
+              {
+                offerId: offer.id,
+                partner: request.partner,
+                status,
+              },
+              "Trade offer sent successfully",
+            );
+            resolve({ offer, status });
+            return;
+          }
+          return;
         });
       } catch (error) {
         reject(error);
@@ -574,14 +639,22 @@ export class Bot extends EventEmitter {
 
   private getTradeOfferRetryDecision(
     error: TradeOfferSendError,
-    item: TradeOfferQueueItem
+    item: TradeOfferQueueItem,
   ): { retry: boolean; reason: string; delayMs: number } {
     if (Date.now() >= item.deadlineMs) {
-      return { retry: false, reason: "offer request deadline expired", delayMs: 0 };
+      return {
+        retry: false,
+        reason: "offer request deadline expired",
+        delayMs: 0,
+      };
     }
 
     if (this.isPermanentTradeOfferError(error)) {
-      return { retry: false, reason: "permanent trade offer error", delayMs: 0 };
+      return {
+        retry: false,
+        reason: "permanent trade offer error",
+        delayMs: 0,
+      };
     }
 
     if (item.attempts > this.options.offerMaxRetries) {
@@ -589,20 +662,24 @@ export class Bot extends EventEmitter {
     }
 
     if (!this.isRetriableTradeOfferError(error)) {
-      return { retry: false, reason: "non-retriable trade offer error", delayMs: 0 };
+      return {
+        retry: false,
+        reason: "non-retriable trade offer error",
+        delayMs: 0,
+      };
     }
 
     const remainingMs = item.deadlineMs - Date.now();
     const backoffMs = Math.min(
       this.options.offerRetryMaxDelayMs,
-      this.options.offerRetryBaseDelayMs * 2 ** Math.max(0, item.attempts - 1)
+      this.options.offerRetryBaseDelayMs * 2 ** Math.max(0, item.attempts - 1),
     );
     const delayMs = Math.min(backoffMs, Math.max(0, remainingMs - 1_000));
 
     return {
       retry: remainingMs > 0,
       reason: "retriable trade offer error",
-      delayMs
+      delayMs,
     };
   }
 
@@ -619,36 +696,36 @@ export class Bot extends EventEmitter {
     }
 
     const message = error.message.toLowerCase();
-    return permanentTradeOfferMessageParts.some((part) => message.includes(part));
+    return permanentTradeOfferMessageParts.some((part) =>
+      message.includes(part),
+    );
   }
 
   private assertTradeOfferWithinDeadline(item: TradeOfferQueueItem): void {
     if (Date.now() > item.deadlineMs) {
       throw this.createTradeOfferDeadlineError(
-        item.request,
         item.createdAtMs,
         item.deadlineMs,
-        item.attempts
+        item.attempts,
       );
     }
   }
 
   private createTradeOfferDeadlineError(
-    request: SendTradeOfferRequest,
     createdAtMs: number,
     deadlineMs: number,
-    attempts: number
+    attempts: number,
   ): Error {
-    const error = new Error("Trade offer request expired before it could be sent") as Error & {
+    const error = new Error(
+      "Trade offer request expired before it could be sent",
+    ) as Error & {
       code?: string;
-      requestId?: string;
       attempts?: number;
       createdAtMs?: number;
       deadlineMs?: number;
     };
 
     error.code = "TRADE_OFFER_REQUEST_EXPIRED";
-    error.requestId = request.requestId;
     error.attempts = attempts;
     error.createdAtMs = createdAtMs;
     error.deadlineMs = deadlineMs;
@@ -701,16 +778,14 @@ export class Bot extends EventEmitter {
         reason,
         inventoryCount: snapshot.inventory.length,
       },
-      "Steam inventory cache refreshed"
+      "Steam inventory cache refreshed",
     );
 
     this.emit("inventoryUpdated", snapshot);
   }
 
   private async fetchInventorySnapshot(): Promise<BotInventorySnapshot> {
-    const [inventory] = await new Promise<[
-      CEconItem[]
-    ]>((resolve, reject) => {
+    const [inventory] = await new Promise<[CEconItem[]]>((resolve, reject) => {
       this.tradeManager.getInventoryContents(730, 2, false, (error, items) => {
         if (error) {
           reject(error);
@@ -726,57 +801,57 @@ export class Bot extends EventEmitter {
     };
   }
 
-//   async acceptOffer(offerId: string, skipStateUpdate = false): Promise<"pending" | "accepted" | "escrow"> {
-//     this.assertReady();
-//     const offer = await this.getOffer(offerId);
+  //   async acceptOffer(offerId: string, skipStateUpdate = false): Promise<"pending" | "accepted" | "escrow"> {
+  //     this.assertReady();
+  //     const offer = await this.getOffer(offerId);
 
-//     return withRetries(
-//       () =>
-//         new Promise<"pending" | "accepted" | "escrow">((resolve, reject) => {
-//           offer.accept(skipStateUpdate, (error, status) => {
-//             if (error) {
-//               reject(error);
-//               return;
-//             }
+  //     return withRetries(
+  //       () =>
+  //         new Promise<"pending" | "accepted" | "escrow">((resolve, reject) => {
+  //           offer.accept(skipStateUpdate, (error, status) => {
+  //             if (error) {
+  //               reject(error);
+  //               return;
+  //             }
 
-//             this.log.info({ offerId, status }, "Trade offer accepted");
-//             resolve(status);
-//           });
-//         }),
-//       {
-//         attempts: this.options.maxLoginRetries,
-//         delayMs: this.options.loginRetryDelayMs,
-//         logger: this.log,
-//         shouldRetry: isRetriableError
-//       }
-//     );
-//   }
+  //             this.log.info({ offerId, status }, "Trade offer accepted");
+  //             resolve(status);
+  //           });
+  //         }),
+  //       {
+  //         attempts: this.options.maxLoginRetries,
+  //         delayMs: this.options.loginRetryDelayMs,
+  //         logger: this.log,
+  //         shouldRetry: isRetriableError
+  //       }
+  //     );
+  //   }
 
-//   async declineOffer(offerId: string): Promise<void> {
-//     this.assertReady();
-//     const offer = await this.getOffer(offerId);
+  //   async declineOffer(offerId: string): Promise<void> {
+  //     this.assertReady();
+  //     const offer = await this.getOffer(offerId);
 
-//     await withRetries(
-//       () =>
-//         new Promise<void>((resolve, reject) => {
-//           offer.decline((error) => {
-//             if (error) {
-//               reject(error);
-//               return;
-//             }
+  //     await withRetries(
+  //       () =>
+  //         new Promise<void>((resolve, reject) => {
+  //           offer.decline((error) => {
+  //             if (error) {
+  //               reject(error);
+  //               return;
+  //             }
 
-//             this.log.info({ offerId }, "Trade offer declined");
-//             resolve();
-//           });
-//         }),
-//       {
-//         attempts: this.options.maxLoginRetries,
-//         delayMs: this.options.loginRetryDelayMs,
-//         logger: this.log,
-//         shouldRetry: isRetriableError
-//       }
-//     );
-//   }
+  //             this.log.info({ offerId }, "Trade offer declined");
+  //             resolve();
+  //           });
+  //         }),
+  //       {
+  //         attempts: this.options.maxLoginRetries,
+  //         delayMs: this.options.loginRetryDelayMs,
+  //         logger: this.log,
+  //         shouldRetry: isRetriableError
+  //       }
+  //     );
+  //   }
 
   private async getOffer(offerId: string): Promise<TradeOffer> {
     return new Promise((resolve, reject) => {
@@ -792,24 +867,31 @@ export class Bot extends EventEmitter {
   }
 
   private async restoreState(): Promise<void> {
-    const [loginAttempts, pollData, tokenCache, inventorySnapshot] = await Promise.all([
-      this.storage.loadLoginAttempts(),
-      this.storage.loadPollData(),
-      this.storage.loadTokenCache(),
-      this.storage.loadInventorySnapshot()
-    ]);
+    const [loginAttempts, pollData, tokenCache, inventorySnapshot] =
+      await Promise.all([
+        this.storage.loadLoginAttempts(),
+        this.storage.loadPollData(),
+        this.storage.loadTokenCache(),
+        this.storage.loadInventorySnapshot(),
+      ]);
 
     this.loginAttempts = this.normalizeLoginAttempts(loginAttempts ?? []);
 
     if (tokenCache) {
-      this._tokenCache = tokenCache
-      if(isJwtUsable(tokenCache.accessToken, this.options.accessTokenRefreshSkewMs))
-      {
+      this._tokenCache = tokenCache;
+      if (
+        isJwtUsable(
+          tokenCache.accessToken,
+          this.options.accessTokenRefreshSkewMs,
+        )
+      ) {
         this.log.info(
           {
-            accessTokenExpiresAt: getJwtExpirationDate(tokenCache.accessToken)?.toISOString()
+            accessTokenExpiresAt: getJwtExpirationDate(
+              tokenCache.accessToken,
+            )?.toISOString(),
           },
-          "Restored valid Steam access token from storage"
+          "Restored valid Steam access token from storage",
         );
       }
 
@@ -831,16 +913,19 @@ export class Bot extends EventEmitter {
       this.log.info(
         {
           inventoryCount: inventorySnapshot.inventory.length,
-          fetchedAt: new Date(inventorySnapshot.fetchedAt).toISOString()
+          fetchedAt: new Date(inventorySnapshot.fetchedAt).toISOString(),
         },
-        "Restored inventory snapshot"
+        "Restored inventory snapshot",
       );
     }
   }
 
   private recordHealthError(error: unknown, context: string): void {
     const snapshot = this.toHealthError(error, context);
-    this.lastErrors = [snapshot, ...this.lastErrors].slice(0, this.maxHealthErrors);
+    this.lastErrors = [snapshot, ...this.lastErrors].slice(
+      0,
+      this.maxHealthErrors,
+    );
     this.healthUpdatedAt = snapshot.at;
   }
 
@@ -862,7 +947,7 @@ export class Bot extends EventEmitter {
             : cause !== undefined
               ? String(cause)
               : undefined,
-      stack: errorLike?.stack
+      stack: errorLike?.stack,
     };
   }
 
@@ -871,7 +956,12 @@ export class Bot extends EventEmitter {
       async () => {
         await this.waitForLoginSlot();
 
-        if (isJwtUsable(this._tokenCache.refreshToken, this.options.tokenRefreshSkewMs)) {
+        if (
+          isJwtUsable(
+            this._tokenCache.refreshToken,
+            this.options.tokenRefreshSkewMs,
+          )
+        ) {
           try {
             await this.loginWithRefreshToken(this._tokenCache.refreshToken);
             return;
@@ -892,8 +982,8 @@ export class Bot extends EventEmitter {
         attempts: this.options.maxLoginRetries,
         delayMs: this.options.loginRetryDelayMs,
         logger: this.log,
-        shouldRetry: isRetriableError
-      }
+        shouldRetry: isRetriableError,
+      },
     );
   }
 
@@ -902,9 +992,10 @@ export class Bot extends EventEmitter {
     this.log.info(
       {
         accountName: this.options.accountName,
-        refreshTokenExpiresAt: getJwtExpirationDate(refreshToken)?.toISOString()
+        refreshTokenExpiresAt:
+          getJwtExpirationDate(refreshToken)?.toISOString(),
       },
-      "Logging into Steam with stored refresh token"
+      "Logging into Steam with stored refresh token",
     );
 
     const session = this.createLoginSession();
@@ -919,12 +1010,15 @@ export class Bot extends EventEmitter {
   private async loginWithCredentials(): Promise<void> {
     if (!this.options.password) {
       throw new Error(
-        "No valid refresh token is available and STEAM_PASSWORD was not provided"
+        "No valid refresh token is available and STEAM_PASSWORD was not provided",
       );
     }
 
     this.recordLoginAttempt();
-    this.log.info({ accountName: this.options.accountName }, "Logging into Steam with credentials");
+    this.log.info(
+      { accountName: this.options.accountName },
+      "Logging into Steam with credentials",
+    );
 
     const session = this.createLoginSession();
     const authenticated = this.waitForAuthenticated(session);
@@ -932,19 +1026,16 @@ export class Bot extends EventEmitter {
     const startResult = (await session.startWithCredentials({
       accountName: this.options.accountName,
       password: this.options.password,
-      persistence: ESessionPersistence.Persistent
+      persistence: ESessionPersistence.Persistent,
     })) as StartSessionResponse;
 
     if (startResult.actionRequired) {
-      await withRetries(
-        () => this.handleSteamGuard(session, startResult),
-        {
-          attempts: this.options.steamGuardTokenSubmitAttempts,
-          delayMs: this.options.steamGuardTokenSubmitDelayMs,
-          logger: this.log,
-          shouldRetry: isRetriableError
-        }
-      );
+      await withRetries(() => this.handleSteamGuard(session, startResult), {
+        attempts: this.options.steamGuardTokenSubmitAttempts,
+        delayMs: this.options.steamGuardTokenSubmitDelayMs,
+        logger: this.log,
+        shouldRetry: isRetriableError,
+      });
     }
 
     await authenticated;
@@ -957,18 +1048,29 @@ export class Bot extends EventEmitter {
       return;
     }
 
-    const refreshToken = this._tokenCache.refreshToken ?? (await this.storage.loadTokenCache())?.refreshToken;
+    const refreshToken =
+      this._tokenCache.refreshToken ??
+      (await this.storage.loadTokenCache())?.refreshToken;
 
     if (!isJwtUsable(refreshToken, this.options.tokenRefreshSkewMs)) {
-      this.log.warn({ reason }, "Refresh token is missing or expiring; performing full login");
+      this.log.warn(
+        { reason },
+        "Refresh token is missing or expiring; performing full login",
+      );
       await this.login();
       return;
     }
 
     if (
       this.areCookiesUsable(this._tokenCache.sessionCookies) &&
-      isJwtUsable(this._tokenCache.accessToken, this.options.accessTokenRefreshSkewMs) &&
-      !isJwtExpiringWithin(refreshToken, this.options.refreshTokenRenewalWindowMs)
+      isJwtUsable(
+        this._tokenCache.accessToken,
+        this.options.accessTokenRefreshSkewMs,
+      ) &&
+      !isJwtExpiringWithin(
+        refreshToken,
+        this.options.refreshTokenRenewalWindowMs,
+      )
     ) {
       return;
     }
@@ -985,22 +1087,29 @@ export class Bot extends EventEmitter {
 
   private async refreshAccessTokenIfNeeded(
     session: LoginSession,
-    refreshToken: string
+    refreshToken: string,
   ): Promise<void> {
     if (this.options.tokenPlatform !== "mobile") {
       return;
     }
 
-    if (isJwtExpiringWithin(refreshToken, this.options.refreshTokenRenewalWindowMs)) {
+    if (
+      isJwtExpiringWithin(
+        refreshToken,
+        this.options.refreshTokenRenewalWindowMs,
+      )
+    ) {
       const renewed = await session.renewRefreshToken();
 
       if (renewed && session.refreshToken) {
         await this.updateTokenCache({ refreshToken: session.refreshToken });
         this.log.info(
           {
-            refreshTokenExpiresAt: getJwtExpirationDate(session.refreshToken)?.toISOString()
+            refreshTokenExpiresAt: getJwtExpirationDate(
+              session.refreshToken,
+            )?.toISOString(),
           },
-          "Steam refresh token renewed"
+          "Steam refresh token renewed",
         );
       }
 
@@ -1008,20 +1117,32 @@ export class Bot extends EventEmitter {
       return;
     }
 
-    if (!isJwtUsable(this._tokenCache.accessToken, this.options.accessTokenRefreshSkewMs)) {
+    if (
+      !isJwtUsable(
+        this._tokenCache.accessToken,
+        this.options.accessTokenRefreshSkewMs,
+      )
+    ) {
       await session.refreshAccessToken();
       await this.updateTokenCache({ accessToken: session.accessToken });
       this.log.debug(
         {
-          accessTokenExpiresAt: getJwtExpirationDate(session.accessToken)?.toISOString()
+          accessTokenExpiresAt: getJwtExpirationDate(
+            session.accessToken,
+          )?.toISOString(),
         },
-        "Steam access token refreshed"
+        "Steam access token refreshed",
       );
     }
   }
 
   private setStoredAccessToken(session: LoginSession): void {
-    if (!isJwtUsable(this._tokenCache.accessToken, this.options.accessTokenRefreshSkewMs)) {
+    if (
+      !isJwtUsable(
+        this._tokenCache.accessToken,
+        this.options.accessTokenRefreshSkewMs,
+      )
+    ) {
       return;
     }
 
@@ -1029,17 +1150,20 @@ export class Bot extends EventEmitter {
       session.accessToken = this._tokenCache.accessToken;
     } catch (error) {
       this.log.warn({ err: error }, "Stored Steam access token was rejected");
-      this.updateTokenCache({ accessToken: null })
+      this.updateTokenCache({ accessToken: null });
     }
   }
 
-  private async captureSession(session: LoginSession, cookies: string[]): Promise<void> {
+  private async captureSession(
+    session: LoginSession,
+    cookies: string[],
+  ): Promise<void> {
     this.steamId64 = session.steamID?.getSteamID64?.() ?? this.steamId64;
     const tokenCacheUpdate = {
       refreshToken: session.refreshToken,
       accessToken: session.accessToken,
       sessionCookies: cookies,
-      updatedAt: Date.now()
+      updatedAt: Date.now(),
     };
 
     await this.updateTokenCache(tokenCacheUpdate);
@@ -1049,10 +1173,14 @@ export class Bot extends EventEmitter {
       {
         accountName: session.accountName || this.options.accountName,
         steamId: session.steamID?.getSteamID64?.(),
-        refreshTokenExpiresAt: getJwtExpirationDate(session.refreshToken)?.toISOString(),
-        accessTokenExpiresAt: getJwtExpirationDate(session.accessToken)?.toISOString()
+        refreshTokenExpiresAt: getJwtExpirationDate(
+          session.refreshToken,
+        )?.toISOString(),
+        accessTokenExpiresAt: getJwtExpirationDate(
+          session.accessToken,
+        )?.toISOString(),
       },
-      "Steam session established"
+      "Steam session established",
     );
   }
 
@@ -1073,19 +1201,19 @@ export class Bot extends EventEmitter {
 
   private async handleSteamGuard(
     session: LoginSession,
-    startResult: StartSessionResponse
+    startResult: StartSessionResponse,
   ): Promise<void> {
     const actions = startResult.validActions ?? [];
     const deviceCodeAction = actions.find(
-      (action) => action.type === EAuthSessionGuardType.DeviceCode
+      (action) => action.type === EAuthSessionGuardType.DeviceCode,
     );
     const emailCodeAction = actions.find(
-      (action) => action.type === EAuthSessionGuardType.EmailCode
+      (action) => action.type === EAuthSessionGuardType.EmailCode,
     );
     const confirmationAction = actions.find(
       (action) =>
         action.type === EAuthSessionGuardType.DeviceConfirmation ||
-        action.type === EAuthSessionGuardType.EmailConfirmation
+        action.type === EAuthSessionGuardType.EmailConfirmation,
     );
 
     if (deviceCodeAction && this.options.sharedSecret) {
@@ -1097,8 +1225,11 @@ export class Bot extends EventEmitter {
 
     if ((deviceCodeAction || emailCodeAction) && this.options.steamGuardCode) {
       this.log.info(
-        { guardType: deviceCodeAction ? "device" : "email", detail: emailCodeAction?.detail },
-        "Submitting provided Steam Guard code"
+        {
+          guardType: deviceCodeAction ? "device" : "email",
+          detail: emailCodeAction?.detail,
+        },
+        "Submitting provided Steam Guard code",
       );
       await session.submitSteamGuardCode(this.options.steamGuardCode);
       return;
@@ -1107,7 +1238,7 @@ export class Bot extends EventEmitter {
     if (confirmationAction) {
       this.log.info(
         { guardType: EAuthSessionGuardType[confirmationAction.type] },
-        "Waiting for Steam Guard confirmation"
+        "Waiting for Steam Guard confirmation",
       );
       return;
     }
@@ -1115,7 +1246,7 @@ export class Bot extends EventEmitter {
     throw new Error(
       `Steam Guard action required but cannot be handled: ${actions
         .map((action) => EAuthSessionGuardType[action.type])
-        .join(", ")}`
+        .join(", ")}`,
     );
   }
 
@@ -1149,7 +1280,9 @@ export class Bot extends EventEmitter {
   }
 
   private createLoginSession(): LoginSession {
-    const session = new LoginSession(resolvePlatform(this.options.tokenPlatform));
+    const session = new LoginSession(
+      resolvePlatform(this.options.tokenPlatform),
+    );
     session.loginTimeout = this.options.loginTimeoutMs;
 
     session.on("polling", () => {
@@ -1192,12 +1325,18 @@ export class Bot extends EventEmitter {
       this.ensureFreshSession("trade manager session expired").catch((err) => {
         this.recordHealthError(err, "trade manager session expired");
         this.setStatus("error");
-        this.log.error({ err }, "Failed to refresh expired Steam trade session");
+        this.log.error(
+          { err },
+          "Failed to refresh expired Steam trade session",
+        );
       });
     });
 
     this.tradeManager.on("newOffer", (offer) => {
-      this.log.info({ offerId: offer.id, partner: offer.partner.getSteamID64() }, "New trade offer received");
+      this.log.info(
+        { offerId: offer.id, partner: offer.partner.getSteamID64() },
+        "New trade offer received",
+      );
       this.emit("newOffer", offer);
     });
 
@@ -1206,10 +1345,11 @@ export class Bot extends EventEmitter {
         {
           offerId: offer.id,
           oldState,
-          newState: offer.state
+          newState: offer.state,
         },
-        "Sent trade offer changed state"
+        "Sent trade offer changed state",
       );
+      this.emit("sentOfferChanged", offer, oldState);
     });
   }
 
@@ -1239,11 +1379,14 @@ export class Bot extends EventEmitter {
     const oldest = Math.min(...this.loginAttempts);
     const waitMs = Math.max(
       0,
-      oldest + this.options.loginAttemptPeriodMs - Date.now() + 500
+      oldest + this.options.loginAttemptPeriodMs - Date.now() + 500,
     );
 
     if (waitMs > 0) {
-      this.log.warn({ waitMs }, "Login attempt limit reached; waiting before retry");
+      this.log.warn(
+        { waitMs },
+        "Login attempt limit reached; waiting before retry",
+      );
       await delay(waitMs);
     }
   }
@@ -1251,7 +1394,9 @@ export class Bot extends EventEmitter {
   private recordLoginAttempt(): void {
     this.loginAttempts = [...this.recentLoginAttempts(), Date.now()];
     this.storage
-      .saveLoginAttempts(this.loginAttempts.map((attempt) => Math.floor(attempt / 1000)))
+      .saveLoginAttempts(
+        this.loginAttempts.map((attempt) => Math.floor(attempt / 1000)),
+      )
       .catch((error) => {
         this.log.warn({ err: error }, "Failed to save login attempts");
       });
@@ -1260,7 +1405,7 @@ export class Bot extends EventEmitter {
   private recentLoginAttempts(): number[] {
     const now = Date.now();
     return this.loginAttempts.filter(
-      (attempt) => now - attempt < this.options.loginAttemptPeriodMs
+      (attempt) => now - attempt < this.options.loginAttemptPeriodMs,
     );
   }
 
@@ -1268,10 +1413,14 @@ export class Bot extends EventEmitter {
     return attempts
       .filter((attempt) => Number.isFinite(attempt))
       .map((attempt) => (attempt > 10_000_000_000 ? attempt : attempt * 1000))
-      .filter((attempt) => Date.now() - attempt < this.options.loginAttemptPeriodMs);
+      .filter(
+        (attempt) => Date.now() - attempt < this.options.loginAttemptPeriodMs,
+      );
   }
 
-  private areCookiesUsable(cookies: string[] | null | undefined): cookies is string[] {
+  private areCookiesUsable(
+    cookies: string[] | null | undefined,
+  ): cookies is string[] {
     const token = getSteamLoginSecureJwt(cookies);
     return isJwtUsable(token, this.options.tokenRefreshSkewMs);
   }
@@ -1321,13 +1470,14 @@ export class Bot extends EventEmitter {
         this.on("ready", handler);
       }),
       new Promise<void>((_, reject) => {
-        setTimeout(() => reject(new Error("Timeout waiting for bot to be ready")), timeoutMs);
-      })
+        setTimeout(
+          () => reject(new Error("Timeout waiting for bot to be ready")),
+          timeoutMs,
+        );
+      }),
     ]);
   }
 }
-
-
 
 function resolvePlatform(platform: SteamTokenPlatform): EAuthTokenPlatformType {
   switch (platform) {

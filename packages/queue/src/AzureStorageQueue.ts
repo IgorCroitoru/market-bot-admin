@@ -4,6 +4,7 @@ import type { TokenCredential } from "@azure/core-auth";
 import type { DequeuedMessageItem } from "@azure/storage-queue";
 
 const MAX_AZURE_QUEUE_MESSAGE_BYTES = 64 * 1024;
+const AZURE_QUEUE_NAME_PATTERN = /^[a-z0-9](?!.*--)[a-z0-9-]{1,61}[a-z0-9]$/;
 
 export type AzureQueueConfig = {
   queueName: string;
@@ -112,6 +113,8 @@ export class AzureStorageQueue<TMessage> {
   private readonly shouldCreateIfNotExists: boolean;
 
   constructor(config: AzureQueueConfig) {
+    assertValidAzureQueueName(config.queueName);
+
     this.encoding = config.encoding ?? "base64-json";
     this.shouldCreateIfNotExists = config.createIfNotExists ?? false;
 
@@ -221,7 +224,7 @@ export class AzureStorageQueue<TMessage> {
 
     while (!options.abortSignal?.aborted) {
       const messages = await this.receive({
-        maxMessages: options.maxMessages ?? 8,
+        maxMessages: options.maxMessages ?? 1,
         visibilityTimeoutSeconds: options.visibilityTimeoutSeconds ?? 30,
       });
 
@@ -289,6 +292,14 @@ export class AzureStorageQueue<TMessage> {
         `Azure Queue message too large: ${size} bytes. Max is ${MAX_AZURE_QUEUE_MESSAGE_BYTES} bytes.`
       );
     }
+  }
+}
+
+function assertValidAzureQueueName(queueName: string): void {
+  if (!AZURE_QUEUE_NAME_PATTERN.test(queueName)) {
+    throw new Error(
+      `Invalid Azure Queue name "${queueName}". Queue names must be 3-63 characters, use only lowercase letters, numbers, and hyphens, start and end with a letter or number, and not contain consecutive hyphens.`
+    );
   }
 }
 

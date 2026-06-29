@@ -7,6 +7,7 @@ export interface BotOptions {
   accountName: string;
   password?: string;
   sharedSecret?: string;
+  identitySecret?: string;
   steamGuardCode?: string;
   domain?: string;
   language?: string;

@@ -12,14 +12,12 @@ export interface LocalBotStorageOptions {
 
 export class LocalBotStorage implements BotStorage {
   private readonly dataDir: string;
-  private readonly secretsDir: string;
 
   constructor(options: LocalBotStorageOptions) {
     const rootDir = options.rootDir ?? path.join(process.cwd(), ".steam-bot-data");
     const accountDir = sanitizePathPart(options.accountName);
 
     this.dataDir = path.join(rootDir, accountDir, "data");
-    this.secretsDir = path.join(rootDir, accountDir, "secrets");
   }
   async saveInventorySnapshot(snapshot: BotInventorySnapshot): Promise<void> {
     await this.saveData("inventory-snapshot", snapshot);
@@ -72,10 +70,6 @@ export class LocalBotStorage implements BotStorage {
 
   private dataPath(key: string): string {
     return path.join(this.dataDir, `${sanitizePathPart(key)}.json`);
-  }
-
-  private secretPath(key: string): string {
-    return path.join(this.secretsDir, `${sanitizePathPart(key)}.txt`);
   }
 }
 
