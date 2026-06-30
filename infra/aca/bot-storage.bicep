@@ -6,9 +6,17 @@ param location string = resourceGroup().location
 @description('Globally unique storage account name. Lowercase letters and numbers only, 3-24 chars.')
 param storageAccountName string
 
+@description('Trades Queue name.')
+param botTradeQueueName string = 'trade-requests'
+
+@description('Trades status Queue name.')
+param botTradeStatusQueueName string = 'trade-status-update'
+
 @description('Blob container used by AzureBotStorage.')
 param blobContainerName string
 
+@description('Your id to be able to contribute to queue in portal.')
+param developerObjectId string
 
 param runtimeIdentityPrincipalId string
 param runtimeIdentityId string
@@ -21,6 +29,7 @@ param tags object = {
 }
 
 var storageBlobDataContributorRoleId = 'ba92f5b4-2d11-453d-a403-e96b0029c9fe'
+var storageQueueContributorRoleId = '974c5e8b-45b9-4653-ba55-5f855dd0fb88'
 
 resource storageAccount 'Microsoft.Storage/storageAccounts@2024-01-01' = {
   name: storageAccountName
@@ -85,6 +94,55 @@ resource runtimeStorageBlobDataContributor 'Microsoft.Authorization/roleAssignme
   }
 }
 
+resource queueService 'Microsoft.Storage/storageAccounts/queueServices@2023-05-01' = {
+  parent: storageAccount
+  name: 'default'
+}
+
+resource tradesQueue 'Microsoft.Storage/storageAccounts/queueServices/queues@2023-05-01' = {
+  parent: queueService
+  name: botTradeQueueName
+  properties: {
+    metadata: {}
+  }
+}
+
+resource tradesStatusQueue 'Microsoft.Storage/storageAccounts/queueServices/queues@2023-05-01' = {
+  parent: queueService
+  name: botTradeStatusQueueName
+  properties: {
+    metadata: {}
+  }
+}
+
+// Runtime identity contributor
+resource queueDataContributorAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+  name: guid(storageAccount.id, runtimeIdentityPrincipalId, storageQueueContributorRoleId)
+  scope: storageAccount
+  properties: {
+    principalId: runtimeIdentityPrincipalId
+    principalType: 'ServicePrincipal'
+    roleDefinitionId: subscriptionResourceId(
+      'Microsoft.Authorization/roleDefinitions',
+      storageQueueContributorRoleId
+    )
+  }
+}
+
+
+// User contributor
+resource queueDataUserContributorAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+  name: guid(storageAccount.id, developerObjectId, storageQueueContributorRoleId)
+  scope: storageAccount
+  properties: {
+    principalId: developerObjectId
+    principalType: 'User'
+    roleDefinitionId: subscriptionResourceId(
+      'Microsoft.Authorization/roleDefinitions',
+      storageQueueContributorRoleId
+    )
+  }
+}
 
 output storageAccountName string = storageAccount.name
 output blobContainerName string = blobContainer.name

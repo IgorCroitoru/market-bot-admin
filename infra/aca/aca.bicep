@@ -40,6 +40,24 @@ param runtimeIdentityId string
 @description('ACR login server, for example myacr.azurecr.io.')
 param acrLoginServer string
 
+@description('Name of the queue for incoming trades requests.')
+param botTradeQueueName string
+
+@description('Name of the queue for outgoing trade statuses updates.')
+param botTradeStatusQueueName string
+
+@description('Create azure queue if not exists.')
+param botQueueCreateIfNotExists string = 'true'
+
+@description('Visibility of trades status messages from azure queue.')
+param tradesStatusVisibilityTimeoutSeconds string = '60'
+
+@description('Number of messages to dequeue')
+param botQueueMaxMessages string = '4'
+
+@description('Max number of messages to dequeue')
+param botQueueMaxDequeueCount string = '5'
+
 @description('Key Vault URI, for example https://myvault.vault.azure.net/.')
 param keyVaultUri string
 
@@ -62,6 +80,7 @@ var secretNames = {
   steamAccountName: 'steam-account-name'
   steamPassword: 'steam-password'
   steamSharedSecret: 'steam-shared-secret'
+  steamIdentitySecret: 'steam-identity-secret'
 }
 
 resource containerApp 'Microsoft.App/containerApps@2024-03-01' = {
@@ -92,17 +111,22 @@ resource containerApp 'Microsoft.App/containerApps@2024-03-01' = {
       secrets: [
         {
           name: secretNames.steamAccountName
-          keyVaultUrl: '${keyVaultUri}secrets/steam-account-name'
+          keyVaultUrl: '${keyVaultUri}secrets/${secretNames.steamAccountName}'
           identity: runtimeIdentityId
         }
         {
           name: secretNames.steamPassword
-          keyVaultUrl: '${keyVaultUri}secrets/steam-password'
+          keyVaultUrl: '${keyVaultUri}secrets/${secretNames.steamPassword}'
           identity: runtimeIdentityId
         }
         {
           name: secretNames.steamSharedSecret
-          keyVaultUrl: '${keyVaultUri}secrets/steam-shared-secret'
+          keyVaultUrl: '${keyVaultUri}secrets/${secretNames.steamSharedSecret}'
+          identity: runtimeIdentityId
+        }
+        {
+          name: secretNames.steamIdentitySecret
+          keyVaultUrl: '${keyVaultUri}secrets/${secretNames.steamIdentitySecret}'
           identity: runtimeIdentityId
         }
       ]
@@ -159,6 +183,10 @@ resource containerApp 'Microsoft.App/containerApps@2024-03-01' = {
             {
               name: 'STEAM_SHARED_SECRET'
               secretRef: secretNames.steamSharedSecret
+            }
+            {
+              name: 'STEAM_IDENTITY_SECRET'
+              secretRef: secretNames.steamIdentitySecret
             }
             {
               name: 'STEAM_GUARD_CODE'
@@ -235,6 +263,30 @@ resource containerApp 'Microsoft.App/containerApps@2024-03-01' = {
             {
               name: 'BOT_REFRESH_TOKEN_RENEWAL_WINDOW_MS'
               value: botEnv.botRefreshTokenRenewalWindowMs
+            }
+            {
+              name:'BOT_INCOMING_TRADE_QUEUE_NAME'
+              value: botTradeQueueName
+            }
+            {
+              name:'BOT_TRADE_STATUS_QUEUE_NAME'
+              value: botTradeStatusQueueName
+            }
+            {
+              name:'BOT_QUEUE_CREATE_IF_NOT_EXISTS'
+              value: botQueueCreateIfNotExists
+            }
+            {
+              name: 'BOT_QUEUE_VISIBILITY_TIMEOUT_SECONDS'
+              value: tradesStatusVisibilityTimeoutSeconds
+            }
+            {
+              name: 'BOT_QUEUE_MAX_MESSAGES'
+              value: botQueueMaxMessages
+            }
+            {
+              name: 'BOT_QUEUE_MAX_DEQUEUE_COUNT'
+              value: botQueueMaxDequeueCount
             }
           ]
         }

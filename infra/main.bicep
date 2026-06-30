@@ -31,7 +31,7 @@ param deployLocalDev bool = false
 param developerObjectId string = ''
 
 @description('Queue name created for local development.')
-param queueName string = 'local-dev-queue'
+param localQueueName string = 'local-dev-queue'
 
 @description('Static Web App pricing tier.')
 @allowed([
@@ -99,6 +99,24 @@ param externalIngress bool = false
 
 @description('Target port.')
 param targetPort int = 8080
+
+@description('Name of the queue for incoming trades requests.')
+param botTradeQueueName string
+
+@description('Name of the queue for outgoing trade statuses updates.')
+param botTradeStatusQueueName string
+
+@description('Create azure queue if not exists.')
+param botQueueCreateIfNotExists string = 'true'
+
+@description('Visibility of trades status messages from azure queue.')
+param tradesStatusVisibilityTimeoutSeconds string = '60'
+
+@description('Number of messages to dequeue')
+param botQueueMaxMessages string = '4'
+
+@description('Max number of messages to dequeue')
+param botQueueMaxDequeueCount string = '5'
 
 module naming './shared/naming.bicep' = {
   name: 'shared-naming'
@@ -175,7 +193,7 @@ module localDev './local-dev/main.bicep' = if (deployLocalDev) {
     blobContainerName: resourceNames.blobContainer.name
     keyVaultName: resourceNames.localKeyVault.name
     developerObjectId: developerObjectId
-    queueName: queueName
+    queueName: localQueueName
     tags: localDevTags
   }
 }
@@ -191,6 +209,12 @@ module aca './aca/main.bicep' = {
       containerApp: effectiveResourceLocations.containerApp
       runtimeStorage: effectiveResourceLocations.runtimeStorage
     }
+    tradesStatusVisibilityTimeoutSeconds: tradesStatusVisibilityTimeoutSeconds
+    botTradeQueueName:  botTradeQueueName
+    botTradeStatusQueueName: botTradeStatusQueueName
+    botQueueCreateIfNotExists: botQueueCreateIfNotExists
+    botQueueMaxDequeueCount: botQueueMaxDequeueCount
+    botQueueMaxMessages: botQueueMaxMessages
     developerObjectId: developerObjectId
     developerPermissionToWriteKv: developerPermissionToWriteKv
     runtimeIdentityName: resourceNames.runtimeIdentity.name

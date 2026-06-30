@@ -59,6 +59,24 @@ param blobContainerName string
 @description('Bot storage name')
 param storageAccountName string
 
+@description('Name of the queue for incoming trades requests.')
+param botTradeQueueName string
+
+@description('Name of the queue for outgoing trade statuses updates.')
+param botTradeStatusQueueName string
+
+@description('Create azure queue if not exists.')
+param botQueueCreateIfNotExists string
+
+@description('Visibility of trades status messages from azure queue.')
+param tradesStatusVisibilityTimeoutSeconds string
+
+@description('Number of messages to dequeue')
+param botQueueMaxMessages string
+
+@description('Max number of messages to dequeue')
+param botQueueMaxDequeueCount string
+
 module runtimeIdentity './user-assigned-identity.bicep' = {
   name: 'id-runtime-${uniqueString(resourceGroup().id, runtimeIdentityName)}'
   params: {
@@ -144,6 +162,12 @@ module containerApp './aca.bicep' = {
     keyVaultSecretsUserForRuntime
   ]
   params: {
+    tradesStatusVisibilityTimeoutSeconds: tradesStatusVisibilityTimeoutSeconds
+    botTradeQueueName: botTradeQueueName
+    botTradeStatusQueueName: botTradeStatusQueueName
+    botQueueCreateIfNotExists: botQueueCreateIfNotExists
+    botQueueMaxDequeueCount: botQueueMaxDequeueCount
+    botQueueMaxMessages: botQueueMaxMessages
     runtimeIdentityClientId: runtimeIdentity.outputs.clientId
     blobContainerName: blobContainerName
     storageAccountName: storageAccountName
@@ -186,6 +210,9 @@ module botStorage './bot-storage.bicep' = {
     containerApp
   ]
   params: {
+    botTradeQueueName: botTradeQueueName
+    botTradeStatusQueueName: botTradeStatusQueueName
+    developerObjectId: developerObjectId
     storageAccountName: storageAccountName
     blobContainerName: blobContainerName
     location: locations.runtimeStorage
