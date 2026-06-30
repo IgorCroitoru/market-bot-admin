@@ -1,59 +1,8 @@
-import { z } from "zod";
 import type { BotOptions, SteamTokenPlatform } from "./IOptions";
 import type { AzureQueueConfig } from "@market-bot-admin/queue";
 import type { TaskControllerOptions } from "./TaskController";
+import {booleanFromEnv, numberFromEnv, optionalBooleanFromEnv, optionalTrimmedString, z} from "@market-bot-admin/config"
 
-const numberFromEnv = (defaultValue: number) =>
-  z.preprocess((value) => {
-    if (value === undefined || value === null || value === "") {
-      return defaultValue;
-    }
-
-    if (typeof value === "string") {
-      return Number(value);
-    }
-
-    return value;
-  }, z.number().int().nonnegative());
-
-const optionalNumberFromEnv = () =>
-  z.preprocess((value) => {
-    if (value === undefined || value === null || value === "") {
-      return undefined;
-    }
-
-    if (typeof value === "string") {
-      return Number(value);
-    }
-
-    return value;
-  }, z.number().int().positive().optional());
-
-const booleanFromEnv = (defaultValue: boolean) =>
-  z.preprocess((value) => {
-    if (value === undefined || value === null || value === "") {
-      return defaultValue;
-    }
-
-    if (typeof value === "string") {
-      return /^(1|true|yes|on)$/i.test(value);
-    }
-
-    return Boolean(value);
-  }, z.boolean());
-
-const optionalBooleanFromEnv = () =>
-  z.preprocess((value) => {
-    if (value === undefined || value === null || value === "") {
-      return undefined;
-    }
-
-    if (typeof value === "string") {
-      return /^(1|true|yes|on)$/i.test(value);
-    }
-
-    return Boolean(value);
-  }, z.boolean().optional());
 
 const envSchema = z.object({
   BOT_ENV: z.enum(["dev", "prod", "test"]).default("dev"),
@@ -87,15 +36,7 @@ const envSchema = z.object({
   BOT_REFRESH_TOKEN_RENEWAL_WINDOW_MS: numberFromEnv(7 * 24 * 60 * 60_000)
 });
 
-const optionalTrimmedString = () =>
-  z.preprocess((value) => {
-    if (typeof value !== "string") {
-      return value;
-    }
 
-    const trimmed = value.trim();
-    return trimmed.length > 0 ? trimmed : undefined;
-  }, z.string().optional());
 
 const queueEnvSchema = z.object({
   BOT_QUEUE_ENABLED: optionalBooleanFromEnv(),
