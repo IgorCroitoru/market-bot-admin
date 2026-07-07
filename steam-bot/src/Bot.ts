@@ -378,7 +378,10 @@ export class Bot extends EventEmitter {
     const createdAtMs = normalizeRequestTimestamp(
       request.createdAt ?? request.timestamp ?? Date.now(),
     );
-    const deadlineMs = createdAtMs + this.options.offerRequestTtlMs;
+    const deadlineMs =
+      request.deadlineAt !== undefined
+        ? normalizeRequestTimestamp(request.deadlineAt)
+        : createdAtMs + this.options.offerRequestTtlMs;
 
     if (Date.now() > deadlineMs) {
       throw this.createTradeOfferDeadlineError(createdAtMs, deadlineMs, 0);

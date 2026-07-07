@@ -10,7 +10,9 @@ param keyVaultName = 'kv-cs-tm-bot-local-dev'
 param developerObjectId = 'ac1aa61a-93f2-4742-a3a3-bdc008f5a074'
 
 
-param queueName = 'local-dev-queue'
+param tradesQueueName = 'trade-requests'
+param statusQueueName = 'trade-status-update'
+param platformTradeReadyQueueName = 'platform-trade-ready'
 
 param tags = {
   environment: 'local-dev'

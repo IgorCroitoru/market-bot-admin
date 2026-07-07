@@ -14,7 +14,19 @@ param keyVaultName string
 param developerObjectId string
 
 @description('Name of the queue to create.')
-param queueName string
+param tradesQueueName string
+
+@description('Name of the queue for outgoing trade status updates.')
+param statusQueueName string = 'trade-status-update'
+
+@description('Queue name for Market trade-ready registration tasks.')
+param platformTradeReadyQueueName string = 'platform-trade-ready'
+
+@description('Trade table name used by tm-client.')
+param tradeTableName string
+
+@description('Market items table name used by tm-client.')
+param marketItemsTableName string
 
 @description('Tags.')
 param tags object = {
@@ -40,7 +52,11 @@ module queue 'local-dev-queue.bicep' = {
   params: {
     developerObjectId: developerObjectId
     storageAccountName: storageAccountName
-    queueName: queueName
+    queueNames: [
+      tradesQueueName
+      statusQueueName
+      platformTradeReadyQueueName
+    ]
   }
   dependsOn: [
     storageKeyVault
@@ -50,6 +66,10 @@ module queue 'local-dev-queue.bicep' = {
 module tableStorage 'local-dev-table.storage.bicep' = {
   name: 'tableStorage'
   params: {
+    tableNames: [
+      tradeTableName
+      marketItemsTableName
+    ]
     storageAccountName: storageAccountName
     developerObjectId: developerObjectId
   }

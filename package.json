@@ -12,13 +12,16 @@
     "steam-bot"
   ],
   "scripts": {
-    "build": "npm run build -w @market-bot-admin/logging && npm run build -w @market-bot-admin/config && npm run build -w @market-bot-admin/shared && npm run build -w @market-bot-admin/queue && npm run build -w steam-bot",
+    "build": "npm run build -w @market-bot-admin/logging && npm run build -w @market-bot-admin/config && npm run build -w @market-bot-admin/shared && npm run build -w @market-bot-admin/queue && npm run build -w @market-bot-admin/storage && npm run build -w steam-bot && npm run build -w tm-client",
     "build:logging": "npm run build -w @market-bot-admin/logging",
     "build:config": "npm run build -w @market-bot-admin/config",
     "build:shared": "npm run build -w @market-bot-admin/shared",
     "build:queue": "npm run build -w @market-bot-admin/queue",
+    "build:storage": "npm run build -w @market-bot-admin/storage",
+    "build:tm-client": "npm run build -w tm-client",
     "dev:api": "npm run start -w api",
-    "dev:bot": "npm run dev -w steam-bot"
+    "dev:bot": "npm run dev -w steam-bot",
+    "dev:tm-client": "npm run dev -w tm-client"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",

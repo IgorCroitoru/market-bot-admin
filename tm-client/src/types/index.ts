@@ -75,11 +75,17 @@ export interface ClientOptions {
   requestTimeoutMs?: number;
   maxBackoffMs?: number;
   pingIntervalMs?: number;
+  marketTradePollIntervalMs?: number;
+  marketTradeEmptyPollIntervalMs?: number;
+  marketTradeOfferTtlMs?: number;
+  marketItemsPollIntervalMs?: number;
+  marketItemsEmptyPollIntervalMs?: number;
   logger?: AppLogger;
 }
 
 export interface ApiBaseResponse {
     success: boolean;
+    error?: any
 }
 
 
@@ -145,7 +151,7 @@ export interface Trade {
   secret: string;
   bot_id: string;
   nik: string;
-  list_item_id: Record<string, TradeItem>;
+  list_item_id?: Record<string, TradeItem>;
 }
 
 /**

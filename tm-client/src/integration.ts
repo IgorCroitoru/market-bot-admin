@@ -1,375 +1,793 @@
-/**
- * Integration Example - Market CSGO API Client
- * Demonstrates all features and best practices
- */
-
-import { MarketClient, ApiVersion, Currency, OfferGiveP2P } from './index';
-import { createLogger, type AppLogger } from '@market-bot-admin/logging';
-import { logger } from './logger';
-import { loadApiOptionsFromEnv, loadAzureBlobStorageOptionsFromEnv, loadAzureQueueOptionsFromEnv, loadAzureTableStorageOptionsFromEnv } from './config';
-import { AzureStorageQueue, AzureQueueConfig } from '@market-bot-admin/queue';
-import {AzureBlobStorage, AzureTableJsonStorage, ReadonlyStorage, ReadonlyTableStorage, TableStorage} from "@market-bot-admin/storage";
-import { 
-  BotStorageItems, 
-  TokenCache, 
+import { AzureStorageQueue } from "@market-bot-admin/queue";
+import { AzureBlobStorage, AzureTableJsonStorage, ReadonlyStorage } from "@market-bot-admin/storage";
+import type {
+  BotStorageItems,
   IncomingTradeTaskMessage,
+  PlatformTradeReadyMessage,
+  TokenCache,
+  TradeItem as QueueTradeItem,
   TradeStatusQueueMessage,
-  BotStatusChangedMessage } from '@market-bot-admin/shared';
-import { TradeStorageService } from './TradeStorageService';
+} from "@market-bot-admin/shared";
+import type { AppLogger } from "@market-bot-admin/logging";
+import {
+  loadApiOptionsFromEnv,
+  loadAzureMarketItemsTableStorageOptionsFromEnv,
+  loadAzureBlobStorageOptionsFromEnv,
+  loadAzureQueueConsumerOptionsFromEnv,
+  loadAzurePlatformTradeReadyQueueOptionsFromEnv,
+  loadAzureTradeQueueOptionsFromEnv,
+  loadAzureStatusQueueOptionsFromEnv,
+  loadAzureTableStorageOptionsFromEnv,
+} from "./config";
+import { logger } from "./logger";
+import { MarketClient } from "./MarketClient";
+import type { ClientOptions, ItemInfo, OfferGiveP2P, Trade } from "./types";
+import type { TradeOffer } from "./types/schemas";
+import { MarketItemsStorageService } from "./MarketItemsStorageService";
+import { TradeStorageService } from "./TradeStorageService";
 
-
-type Messages = IncomingTradeTaskMessage | TradeStatusQueueMessage | BotStatusChangedMessage;
+type MarketP2POffer = OfferGiveP2P & {
+  hash: string;
+};
 
 class MarketBotIntegration {
-  private client: MarketClient;
-  private pingInterval: NodeJS.Timeout | null = null;
-  private tradeStatusPollInterval: NodeJS.Timeout | null = null;
-  private tokensPollInterval: NodeJS.Timeout | null = null;
-  private logger: AppLogger;
-  private azureQueue: AzureStorageQueue<Messages>;
-  private tokensCache: TokenCache | null = null;
+  private readonly client: MarketClient;
+  private readonly tradeQueue: AzureStorageQueue<IncomingTradeTaskMessage>;
+  private readonly statusQueue: AzureStorageQueue<TradeStatusQueueMessage>;
+  private readonly platformTradeReadyQueue: AzureStorageQueue<PlatformTradeReadyMessage>;
   private readonly botStorage: ReadonlyStorage<BotStorageItems>;
   private readonly tradesService: TradeStorageService;
+  private readonly marketItemsService: MarketItemsStorageService;
+  private readonly logger: AppLogger;
+  private readonly options: ClientOptions;
+  private readonly queueConsumerOptions: ReturnType<typeof loadAzureQueueConsumerOptionsFromEnv>;
+  private readonly statusQueueAbortController = new AbortController();
+  private readonly platformTradeReadyQueueAbortController = new AbortController();
+
+  private pingInterval: NodeJS.Timeout | null = null;
+  private tradePollInterval: NodeJS.Timeout | null = null;
+  private marketItemsPollTimeout: NodeJS.Timeout | null = null;
+  private tokensPollInterval: NodeJS.Timeout | null = null;
+  private tokensCache: TokenCache | null = null;
+  private tradePollInFlight = false;
+  private marketItemsPollInFlight = false;
+  private statusQueueConsumePromise: Promise<void> | null = null;
+  private platformTradeReadyQueueConsumePromise: Promise<void> | null = null;
+
   constructor() {
-    this.logger = logger; 
-    const options = loadApiOptionsFromEnv(process.env);
-    const azureQueueConfig = loadAzureQueueOptionsFromEnv(process.env);
-    const azureBlobStorageConfig = loadAzureBlobStorageOptionsFromEnv(process.env);
-    const azureTableStorageConfig = loadAzureTableStorageOptionsFromEnv(process.env);
-    this.azureQueue = new AzureStorageQueue(azureQueueConfig);
-    // Initialize with full configuration
-    this.client = new MarketClient(options);
-
-    this.botStorage = new AzureBlobStorage(azureBlobStorageConfig);
-     
-    this.tradesService = new TradeStorageService(new AzureTableJsonStorage(azureTableStorageConfig));
+    this.logger = logger;
+    this.options = loadApiOptionsFromEnv(process.env);
+    this.client = new MarketClient(this.options);
+    this.tradeQueue = new AzureStorageQueue(loadAzureTradeQueueOptionsFromEnv(process.env));
+    this.statusQueue = new AzureStorageQueue(loadAzureStatusQueueOptionsFromEnv(process.env));
+    this.platformTradeReadyQueue = new AzureStorageQueue(
+      loadAzurePlatformTradeReadyQueueOptionsFromEnv(process.env)
+    );
+    this.queueConsumerOptions = loadAzureQueueConsumerOptionsFromEnv(process.env);
+    this.botStorage = new AzureBlobStorage(loadAzureBlobStorageOptionsFromEnv(process.env));
+    this.tradesService = new TradeStorageService(
+      new AzureTableJsonStorage(loadAzureTableStorageOptionsFromEnv(process.env))
+    );
+    this.marketItemsService = new MarketItemsStorageService(
+      new AzureTableJsonStorage(loadAzureMarketItemsTableStorageOptionsFromEnv(process.env))
+    );
   }
 
-  get azureQueueClient(): AzureStorageQueue<Messages> {
-    return this.azureQueue;
-  }
-
-  async setQueueMessage(message: Messages): Promise<void> {
-    await this.azureQueue.send(message);
+  async start(): Promise<void> {
+    await this.startTokensPolling();
+    await this.startPeriodicPing();
+    await this.startMarketTradePolling();
+    await this.startMarketItemsPolling();
+    this.startTradeStatusConsumer();
+    this.startPlatformTradeReadyConsumer();
   }
 
   async startTokensPolling(): Promise<void> {
-     if (this.tokensPollInterval) {
-      clearInterval(this.tokensPollInterval);
-    }
-
+    this.clearTimer("tokens");
     await this.loadTokensFromStorage();
 
-    this.tokensPollInterval = setInterval(async () => {
-      await this.loadTokensFromStorage();
-      }, 5 * 60 * 1000); // Every 5 minutes
+    this.tokensPollInterval = setInterval(() => {
+      this.loadTokensFromStorage().catch((error) => {
+        this.logger.error({ err: error }, "Token cache polling failed");
+      });
+    }, 5 * 60_000);
   }
 
   async loadTokensFromStorage(): Promise<void> {
     try {
-      const tokenCache = await this.botStorage.getData("token-cache");
-      this.tokensCache = tokenCache;
+      this.tokensCache = await this.botStorage.getData("token-cache");
+      
     } catch (error) {
-      this.logger.error(error, 'Error loading tokens from storage');
+      this.logger.error({ err: error }, "Error loading tokens from storage");
     }
   }
 
   async startPeriodicPing(): Promise<void> {
-    this.logger.info('Starting periodic ping...');
-
+    this.clearTimer("ping");
     await this.ping();
 
-    // Then schedule it every 3 minutes (180000ms)
-    this.pingInterval = setInterval(() => this.ping(), 180000);
+    this.pingInterval = setInterval(() => {
+      this.ping().catch((error) => {
+        this.logger.error({ err: error }, "Market ping failed");
+      });
+    }, this.options.pingIntervalMs ?? 180_000);
   }
 
   async ping(): Promise<void> {
-    if(!this.tokensCache || !this.tokensCache.accessToken) {
-        this.logger.warn('No access token available, skipping ping');
+    if (!this.tokensCache?.accessToken) {
+      this.logger.warn("No Steam access token available, skipping market ping");
+      return;
+    }
+
+    const response = await this.client.pingNew({
+      access_token: this.tokensCache.accessToken,
+    });
+
+    if (response.success) {
+      this.logger.debug(
+        {
+          online: response.online,
+          p2p: response.p2p,
+          steamApiKey: response.steamApiKey,
+        },
+        "Market ping succeeded"
+      );
+      return;
+    }
+
+    this.logger.warn({ response }, "Market ping returned an unsuccessful response");
+  }
+
+  async startMarketTradePolling(): Promise<void> {
+    this.clearTimer("trade");
+    await this.pollMarketTrades();
+
+    this.tradePollInterval = setInterval(() => {
+      this.pollMarketTrades().catch((error) => {
+        this.logger.error({ err: error }, "Market trade polling failed");
+      });
+    }, this.options.marketTradePollIntervalMs ?? 15_000);
+  }
+
+  async pollMarketTrades(): Promise<void> {
+    if (this.tradePollInFlight) {
+      this.logger.debug("Market trade poll already in flight; skipping tick");
+      return;
+    }
+
+    this.tradePollInFlight = true;
+
+    try {
+      const tradesResponse = await this.client.getTrades(false);
+
+      if (!tradesResponse.success) {
+        this.logger.debug({ response: tradesResponse }, "Market trades poll was not successful");
         return;
       }
-      try {
-        const response = await this.client.pingNew({
-          access_token: this.tokensCache.accessToken,
-        });
 
-        if (response.success) {
-          this.logger.debug(`Ping successful at ${new Date().toISOString()}`);
-        } else {
-          this.logger.warn(response, `Ping failed`);
-        }
-      } catch (error) {
-        this.logger.error(error, 'Ping error');
+      const activeTrades = tradesResponse.trades.filter((trade) => trade.dir === "in");
+
+      if (activeTrades.length === 0) {
+        this.logger.debug("No active incoming Market trades found");
+        return;
       }
-  }
-  
-  async wasOfferAlreadySent(offer:OfferGiveP2P & {
-        hash: string;
-      }): Promise<boolean> {
-    // Implementation for checking if offer was already sent
-    return false;
-  }
 
-  async processP2PTrades(): Promise<void> {
-    try {
-      this.logger.info('Fetching P2P trade requests...');
-      const tradeRequests = await this.client.getTradeRequestGiveP2PAll();
-      if (tradeRequests.success) {
-        for (const offer of tradeRequests.offers) {
-          if (!(await this.wasOfferAlreadySent(offer))) {
-            this.logger.info({ offerId: offer.hash }, 'Processing new P2P trade offer');
+      const p2pResponse = await this.client.getTradeRequestGiveP2PAll();
 
-          }
+      if (!p2pResponse.success) {
+        if(p2pResponse.error === "nothing"){
+          return
+        }
+        this.logger.warn({ response: p2pResponse }, "Market P2P trade details poll was not successful");
+        return;
+      }
+
+      const offersBySecret = new Map<string, MarketP2POffer>();
+
+      for (const offer of p2pResponse.offers) {
+        const secret = extractOfferSecret(offer);
+
+        if (secret) {
+          offersBySecret.set(secret, offer);
         }
       }
-      
-    } catch (error) {
-      this.logger.error(error, 'Error processing P2P trades');
-    }
-  }
 
-  /**
-   * Example 3: Register trades and mark them as ready
-   */
-  async registerTrades(tradeOfferIds: string[]): Promise<void> {
-    this.logger.info(`Registering ${tradeOfferIds.length} trades...`);
+      this.logger.info(
+        {
+          tradeCount: activeTrades.length,
+          p2pOfferCount: p2pResponse.offers.length,
+        },
+        "Market trades found; matching P2P details by secret"
+      );
 
-    for (const offerId of tradeOfferIds) {
-      try {
-        const response = await this.client.tradeReady(offerId);
+      for (const trade of activeTrades) {
+        const offer = offersBySecret.get(trade.secret);
 
-        if (response.success) {
-          this.logger.info(`Trade ${offerId} marked as ready`);
-        } else {
+        if (!offer) {
           this.logger.warn(
-            { offerId, error: response.error },
-            `Trade failed`
+            {
+              tradeId: trade.trade_id,
+              secret: trade.secret,
+              botId: trade.bot_id,
+            },
+            "Market trade has no matching P2P offer details yet"
           );
+          continue;
         }
-      } catch (error) {
-        this.logger.error({ offerId, error }, 'Error registering trade');
+
+        await this.registerAndQueueP2PTrade(trade, offer);
       }
+    } finally {
+      this.tradePollInFlight = false;
     }
   }
 
-  /**
-   * Example 4: Monitor active trades
-   */
-  async monitorActiveTrades(): Promise<void> {
-    try {
-      this.logger.info('Fetching active trades...');
-      const tradesData = await this.client.getTrades(false);
+  async startMarketItemsPolling(): Promise<void> {
+    this.clearTimer("marketItems");
+    await this.pollMarketItemsAndScheduleNext();
+  }
 
-      if (tradesData.success) {
-        this.logger.info(`Found ${tradesData.trades.length} active trades`);
-        
-        
-        }
-      
+  private async pollMarketItemsAndScheduleNext(): Promise<void> {
+    let nextDelayMs = this.options.marketItemsEmptyPollIntervalMs ?? 30 * 60_000;
+
+    try {
+      nextDelayMs = await this.pollMarketItems();
     } catch (error) {
-      this.logger.error(error, 'Error fetching trades');
+      this.logger.error({ err: error }, "Market items polling failed");
+    } finally {
+      this.marketItemsPollTimeout = setTimeout(() => {
+        void this.pollMarketItemsAndScheduleNext();
+      }, nextDelayMs);
     }
   }
 
-  /**
-   * Example 5: Manage inventory and sales
-   */
-  async manageInventory(): Promise<void> {
-    try {
-      // Get inventory status
-      const status = await this.client.getInventoryStatus();
-      this.logger.info(
-        {
-          is_updating: status.is_updating,
-          items: status.items,
-        },
-        'Inventory status'
-      );
-
-      // Get my inventory
-      const inventory = await this.client.getMyInventory('en');
-      this.logger.info(`Found ${inventory.items.length} items in inventory`);
-
-      // Get current items for sale
-      const items = await this.client.getItems();
-      this.logger.info(
-        {
-          count: items.items.length,
-          statuses: items.items.map((i: any) => i.status),
-        },
-        'Items for sale'
-      );
-    } catch (error) {
-      this.logger.error(error, 'Error managing inventory');
+  async pollMarketItems(): Promise<number> {
+    if (this.marketItemsPollInFlight) {
+      this.logger.debug("Market items poll already in flight; skipping tick");
+      return this.options.marketItemsPollIntervalMs ?? 5 * 60_000;
     }
-  }
 
-  /**
-   * Example 6: Buying items
-   */
-  async buyItem(itemHash: string, maxPrice: number): Promise<void> {
+    this.marketItemsPollInFlight = true;
+
     try {
-      this.logger.info(`Attempting to buy ${itemHash} for max $${maxPrice / 1000}`);
+      const response = await this.client.getItems();
 
-      const response = await this.client.buy({
-        hash_name: itemHash,
-        price: maxPrice,
-        custom_id: `buy_${Date.now()}`,
-        buy_alfaskin: 0,
-      });
-
-      if (response.success) {
-        this.logger.info({ item_id: response.id }, 'Purchase successful');
-
-        // Track the purchase
-        const customId = `buy_${Date.now()}`;
-        setTimeout(async () => {
-          const buyInfo = await this.client.getBuyInfoByCustomId(customId);
-          this.logger.info({ buyInfo }, 'Purchase status');
-        }, 5000);
-      } else {
-        this.logger.error(
-          { error: response.error, code: response.code },
-          'Purchase failed'
-        );
+      if (!response.success) {
+        this.logger.warn({ response }, "Market items poll was not successful");
+        return this.options.marketItemsEmptyPollIntervalMs ?? 30 * 60_000;
       }
-    } catch (error) {
-      this.logger.error(error, 'Error buying item');
-    }
-  }
 
-  /**
-   * Example 7: Add items for sale
-   */
-  async addItemsForSale(
-    items: Array<{ id: string; price: number }>
-  ): Promise<void> {
-    try {
-      this.logger.info(`Adding ${items.length} items for sale...`);
+      const items = Array.isArray(response.items)
+        ? response.items
+        : [];
+      const polledAt = new Date().toISOString();
+      const onSaleItems = items.filter((item) => item.status === "1");
 
       for (const item of items) {
-        const response = await this.client.addToSale(item.id, item.price, Currency.USD);
-        if (response.success) {
-          this.logger.info({ item_id: response.item_id }, 'Item added to sale');
-        } else {
-          this.logger.error({ error: response.error }, 'Failed to add item');
-        }
+        await this.marketItemsService.saveMarketItem(item, polledAt);
       }
-    } catch (error) {
-      this.logger.error(error, 'Error adding items for sale');
+
+      await this.marketItemsService.saveSnapshot({
+        itemCount: items.length,
+        onSaleCount: onSaleItems.length,
+        polledAt,
+      });
+
+      this.logger.debug(
+        {
+          itemCount: items.length,
+          onSaleCount: onSaleItems.length,
+        },
+        "Market items saved to table storage"
+      );
+
+      return onSaleItems.length > 0
+        ? this.options.marketItemsPollIntervalMs ?? 5 * 60_000
+        : this.options.marketItemsEmptyPollIntervalMs ?? 30 * 60_000;
+    } finally {
+      this.marketItemsPollInFlight = false;
     }
   }
 
+  startTradeStatusConsumer(): void {
+    if (this.statusQueueConsumePromise) {
+      return;
+    }
 
-  /**
-   * Example 9: Get market data
-   */
-  async getMarketData(itemHashes: string[]): Promise<void> {
-    try {
-      this.logger.info(`Fetching market data for ${itemHashes.length} items...`);
-
-      const info = await this.client.getListItemsInfo(itemHashes);
-
-      if (info.success) {
-        Object.entries(info.data).forEach(([hash, data]: [string, any]) => {
-          this.logger.info(
+    this.statusQueueConsumePromise = this.statusQueue.consumeForever(
+      (message) => this.handleTradeStatusMessage(message.body),
+      {
+        abortSignal: this.statusQueueAbortController.signal,
+        maxMessages: this.queueConsumerOptions.maxMessages,
+        visibilityTimeoutSeconds: this.queueConsumerOptions.visibilityTimeoutSeconds,
+        maxDequeueCount: this.queueConsumerOptions.maxDequeueCount,
+        onError: (error, message) => {
+          this.logger.warn(
             {
-              item: hash,
-              min: data.min,
-              max: data.max,
-              avg: data.average,
+              err: error,
+              queueMessageId: message.id,
+              tradeOfferId: message.body?.tradeOfferId,
+              dequeueCount: message.dequeueCount,
             },
-            'Market data'
+            "Trade status message failed; it will be visible again"
           );
-        });
+        },
+        onPoisonMessage: async (message, error) => {
+          this.logger.error(
+            {
+              err: error,
+              queueMessageId: message.id,
+              tradeOfferId: message.body?.tradeOfferId,
+            },
+            "Trade status message reached max dequeue count and will be deleted"
+          );
+        },
       }
-
-      // Also get bid/ask prices
-      if (itemHashes.length > 0) {
-        const bidAsk = await this.client.getBidAsk(itemHashes[0]);
-        this.logger.info(
-          {
-            item: itemHashes[0],
-            bid_count: bidAsk.bid.length,
-            ask_count: bidAsk.ask.length,
-          },
-          'Bid/Ask prices'
-        );
-      }
-    } catch (error) {
-      this.logger.error(error, 'Error fetching market data');
-    }
+    );
   }
 
-
-  async getTransactionHistory(): Promise<void> {
-    try {
-      // Get history for last 30 days
-      const thirtyDaysAgo = Math.floor((Date.now() - 30 * 24 * 60 * 60 * 1000) / 1000);
-      const now = Math.floor(Date.now() / 1000);
-
-      const history = await this.client.getHistory(thirtyDaysAgo, now);
-
-      if (history.success && history.data) {
-        this.logger.info(`Found ${history.data.length} transactions`);
-
-        // Separate buys and sells
-        const buys = history.data.filter((h: any) => h.event === 'buy');
-        const sells = history.data.filter((h: any) => h.event === 'sell');
-
-        this.logger.info({ count: buys.length }, 'Total buys');
-        this.logger.info({ count: sells.length }, 'Total sells');
-      }
-    } catch (error) {
-      this.logger.error(error, 'Error fetching history');
+  private async handleTradeStatusMessage(message: TradeStatusQueueMessage): Promise<void> {
+    if (!message || message.type !== "trade-status-changed") {
+      throw new Error(`Unsupported trade status message type: ${String((message as any)?.type)}`);
     }
+
+    const existingTrade = await this.tradesService.getTrade(message.tradeOfferId);
+
+    if (!existingTrade) {
+      this.logger.warn(
+        { tradeOfferId: message.tradeOfferId, offerId: message.offerId },
+        "Received trade status for an unknown trade"
+      );
+      return;
+    }
+
+    const updatedTrade: TradeOffer = {
+      ...existingTrade,
+      offerId: message.offerId ?? existingTrade.offerId,
+      status: mapTradeStatus(message, existingTrade.status),
+      offerStatusHistory: [
+        ...(existingTrade.offerStatusHistory ?? []),
+        {
+          status: message.status,
+          oldStatus: message.oldStatus,
+          statusText: message.statusText,
+          processingStatus: message.processingStatus,
+          error: message.error,
+          timestamp: message.timestamp,
+          data: message.data,
+        },
+      ],
+      registeredWithPlatform: existingTrade.registeredWithPlatform,
+      registeredAt: existingTrade.registeredAt,
+      updatedAt: new Date().toISOString(),
+      data: {
+        ...(existingTrade.data ?? {}),
+        lastStatusQueueMessageId: message.queueMessageId,
+        lastStatusAt: message.timestamp,
+      },
+    };
+
+    await this.tradesService.saveTrade(updatedTrade);
+
+    if (shouldQueuePlatformRegistration(message, updatedTrade)) {
+      await this.enqueuePlatformTradeReady(updatedTrade, message);
+    }
+
+    this.logger.info(
+      {
+        tradeOfferId: message.tradeOfferId,
+        offerId: message.offerId,
+        status: updatedTrade.status,
+        processingStatus: message.processingStatus,
+      },
+      "Trade status saved to table storage"
+    );
   }
 
-
-  /**
-   * Example 13: Error handling and retries
-   */
-  async demonstrateErrorHandling(): Promise<void> {
-    try {
-      // This will retry up to 3 times if 5xx errors occur
-      const response = await this.client.getTrades();
-      this.logger.info(response, 'Request succeeded');
-    } catch (error: any) {
-      if (error.response?.status === 401) {
-        this.logger.error(
-          'Authentication failed - invalid API key'
-        );
-      } else if (error.response?.status === 429) {
-        this.logger.error('Rate limited - too many requests');
-      } else if (error.response?.status >= 500) {
-        this.logger.error(
-          { status: error.response?.status },
-          'Server error (retry failed)'
-        );
-      } else if (!error.response) {
-        this.logger.error(error, 'Network error');
-      }
+  startPlatformTradeReadyConsumer(): void {
+    if (this.platformTradeReadyQueueConsumePromise) {
+      return;
     }
+
+    this.platformTradeReadyQueueConsumePromise = this.platformTradeReadyQueue.consumeForever(
+      (message) => this.handlePlatformTradeReadyMessage(message.body),
+      {
+        abortSignal: this.platformTradeReadyQueueAbortController.signal,
+        maxMessages: this.queueConsumerOptions.maxMessages,
+        visibilityTimeoutSeconds: this.queueConsumerOptions.visibilityTimeoutSeconds,
+        maxDequeueCount: this.queueConsumerOptions.maxDequeueCount,
+        onError: (error, message) => {
+          this.logger.warn(
+            {
+              err: error,
+              queueMessageId: message.id,
+              tradeOfferId: message.body?.tradeOfferId,
+              offerId: message.body?.offerId,
+              dequeueCount: message.dequeueCount,
+            },
+            "Platform trade-ready registration failed; message will be visible again"
+          );
+        },
+        onPoisonMessage: async (message, error) => {
+          this.logger.error(
+            {
+              err: error,
+              queueMessageId: message.id,
+              tradeOfferId: message.body?.tradeOfferId,
+              offerId: message.body?.offerId,
+            },
+            "Platform trade-ready registration reached max dequeue count and will be deleted"
+          );
+        },
+      }
+    );
   }
 
-  /**
-   * Clean up and stop
-   */
+  private async enqueuePlatformTradeReady(
+    trade: TradeOffer,
+    statusMessage: TradeStatusQueueMessage
+  ): Promise<void> {
+    if (!trade.offerId) {
+      return;
+    }
+
+    const existingRegistrationQueueMessageId = asOptionalString(
+      trade.data?.platformRegistrationQueueMessageId
+    );
+
+    if (existingRegistrationQueueMessageId) {
+      this.logger.debug(
+        {
+          tradeOfferId: trade.id,
+          offerId: trade.offerId,
+          queueMessageId: existingRegistrationQueueMessageId,
+        },
+        "Platform trade-ready registration already queued"
+      );
+      return;
+    }
+
+    const response = await this.platformTradeReadyQueue.send({
+      type: "platform-trade-ready",
+      tradeOfferId: trade.id,
+      offerId: trade.offerId,
+      statusQueueMessageId: statusMessage.queueMessageId,
+      createdAt: Date.now(),
+      data: {
+        steamStatus: statusMessage.status,
+        steamStatusText: statusMessage.statusText,
+      },
+    });
+
+    await this.tradesService.saveTrade({
+      ...trade,
+      updatedAt: new Date().toISOString(),
+      data: {
+        ...(trade.data ?? {}),
+        platformRegistrationQueueMessageId: response.messageId,
+        platformRegistrationQueuedAt: Date.now(),
+      },
+    });
+
+    this.logger.info(
+      {
+        tradeOfferId: trade.id,
+        offerId: trade.offerId,
+        queueMessageId: response.messageId,
+      },
+      "Queued active Steam offer for Market trade-ready registration"
+    );
+  }
+
+  private async handlePlatformTradeReadyMessage(
+    message: PlatformTradeReadyMessage
+  ): Promise<void> {
+    if (!message || message.type !== "platform-trade-ready") {
+      throw new Error(`Unsupported platform registration message type: ${String((message as any)?.type)}`);
+    }
+
+    const existingTrade = await this.tradesService.getTrade(message.tradeOfferId);
+
+    if (!existingTrade) {
+      this.logger.warn(
+        { tradeOfferId: message.tradeOfferId, offerId: message.offerId },
+        "Received platform registration task for an unknown trade"
+      );
+      return;
+    }
+
+    if (existingTrade.registeredWithPlatform) {
+      this.logger.info(
+        { tradeOfferId: message.tradeOfferId, offerId: message.offerId },
+        "Trade offer already registered with platform"
+      );
+      return;
+    }
+
+    const response = await this.client.tradeReady(message.offerId);
+
+    logger.debug({
+      queueMessageId: message.statusQueueMessageId,
+      tradeOfferId: message.tradeOfferId,
+      offerId: message.offerId,
+      responseTradeReadySuccess: response.success,
+      responseTradeReadyError: response.error
+    }, "Trade ready sent and received response")
+
+    if (!response.success) {
+      throw new Error(response.error ?? `Market trade-ready failed for offer ${message.offerId}`);
+    }
+
+    await this.tradesService.saveTrade({
+      ...existingTrade,
+      registeredWithPlatform: true,
+      registeredAt: Date.now(),
+      updatedAt: new Date().toISOString(),
+      data: {
+        ...(existingTrade.data ?? {}),
+        platformRegisteredOfferId: response.tradeofferid ?? message.offerId,
+        platformRegisteredAt: Date.now(),
+        platformRegistrationError: undefined,
+      },
+    });
+
+    this.logger.info(
+      {
+        tradeOfferId: message.tradeOfferId,
+        offerId: message.offerId,
+        platformTradeOfferId: response.tradeofferid,
+      },
+      "Registered Steam offer with Market platform"
+    );
+  }
+
+  private async registerAndQueueP2PTrade(
+    marketTrade: Trade,
+    offer: MarketP2POffer
+  ): Promise<void> {
+    const tradeRowKey = marketTrade.secret;
+    const existingTrade = await this.tradesService.getTrade(tradeRowKey);
+
+    if (existingTrade?.queueMessageId) {
+      this.logger.debug(
+        {
+          tradeOfferId: tradeRowKey,
+          queueMessageId: existingTrade.queueMessageId,
+        },
+        "Market trade already queued"
+      );
+      return;
+    }
+
+    const now = Date.now();
+    const marketTradeCreatedAtMs = normalizeMarketTimestamp(marketTrade.timestamp);
+    const deadlineAtMs = marketTradeCreatedAtMs + (this.options.marketTradeOfferTtlMs ?? 5 * 60_000);
+
+    if (now >= deadlineAtMs) {
+      await this.tradesService.saveTrade({
+        ...(existingTrade ?? {}),
+        id: tradeRowKey,
+        offerP2P: offer,
+        marketTrade,
+        botId: marketTrade.bot_id,
+        nik: marketTrade.nik,
+        secret: marketTrade.secret,
+        offerStatusHistory: existingTrade?.offerStatusHistory ?? [],
+        status: "failed",
+        timestamp: marketTradeCreatedAtMs,
+        deadlineAt: new Date(deadlineAtMs).toISOString(),
+        registeredWithPlatform: existingTrade?.registeredWithPlatform ?? false,
+        registeredAt: existingTrade?.registeredAt,
+        createdAt: existingTrade?.createdAt ?? new Date(marketTradeCreatedAtMs).toISOString(),
+        updatedAt: new Date(now).toISOString(),
+        source: "market-p2p",
+        data: {
+          ...(existingTrade?.data ?? {}),
+          marketHash: offer.hash,
+          itemCount: offer.items.length,
+          queueSkippedReason: "market-trade-expired",
+          deadlineAt: new Date(deadlineAtMs).toISOString(),
+        },
+      });
+
+      this.logger.warn(
+        {
+          tradeOfferId: tradeRowKey,
+          tradeId: marketTrade.trade_id,
+          deadlineAt: new Date(deadlineAtMs).toISOString(),
+        },
+        "Market trade is older than the send deadline; not queueing"
+      );
+      return;
+    }
+
+    const createdAt = existingTrade?.createdAt ?? new Date(marketTradeCreatedAtMs).toISOString();
+    const pendingTrade: TradeOffer = {
+      ...(existingTrade ?? {}),
+      id: tradeRowKey,
+      offerP2P: offer,
+      marketTrade,
+      botId: marketTrade.bot_id,
+      nik: marketTrade.nik,
+      secret: marketTrade.secret,
+      offerStatusHistory: existingTrade?.offerStatusHistory ?? [],
+      status: existingTrade?.status ?? "pending",
+      timestamp: existingTrade?.timestamp ?? marketTradeCreatedAtMs,
+      deadlineAt: new Date(deadlineAtMs).toISOString(),
+      registeredWithPlatform: existingTrade?.registeredWithPlatform ?? false,
+      createdAt,
+      updatedAt: new Date(now).toISOString(),
+      source: "market-p2p",
+      data: {
+        ...(existingTrade?.data ?? {}),
+        marketHash: offer.hash,
+        marketTradeId: marketTrade.trade_id,
+        itemCount: offer.items.length,
+        deadlineAt: new Date(deadlineAtMs).toISOString(),
+        remainingMs: deadlineAtMs - now,
+      },
+    };
+
+    await this.tradesService.saveTrade(pendingTrade);
+
+    const queueMessage = this.createIncomingTradeTaskMessage(offer, pendingTrade);
+    const queueResponse = await this.tradeQueue.send(queueMessage);
+    const queuedTrade: TradeOffer = {
+      ...pendingTrade,
+      status: "queued",
+      queueMessageId: queueResponse.messageId,
+      updatedAt: new Date().toISOString(),
+    };
+
+    await this.tradesService.saveTrade(queuedTrade);
+
+    this.logger.info(
+      {
+        tradeOfferId: tradeRowKey,
+        secret: marketTrade.secret,
+        queueMessageId: queueResponse.messageId,
+        partner: offer.partner,
+        itemCount: offer.items.length,
+      },
+      "Market P2P trade registered and queued for Steam bot"
+    );
+  }
+
+  private createIncomingTradeTaskMessage(
+    offer: MarketP2POffer,
+    tradeRecord: TradeOffer
+  ): IncomingTradeTaskMessage {
+    return {
+      type: "trade-request",
+      tradeOfferId: tradeRecord.id,
+      trade: {
+        partner: String(offer.partner),
+        token: offer.token,
+        message: offer.tradeoffermessage,
+        createdAt: tradeRecord.createdAt,
+        deadlineAt: tradeRecord.deadlineAt,
+        itemsToGive: offer.items.map((item): QueueTradeItem => ({
+          appid: Number(item.appid),
+          contextid: String(item.contextid),
+          assetid: String(item.assetid),
+          amount: Number(item.amount),
+        })),
+        data: {
+          source: "market-p2p",
+          marketHash: offer.hash,
+          marketSecret: tradeRecord.secret,
+          registeredAt: tradeRecord.createdAt,
+          prices: offer.items
+            .filter((item) => item.price)
+            .map((item) => ({
+              assetid: String(item.assetid),
+              price: item.price,
+            })),
+        },
+      },
+    };
+  }
+
   async stop(): Promise<void> {
-    this.logger.info('Stopping integration...');
+    this.logger.info("Stopping market bot integration");
 
-    if (this.pingInterval) {
-      clearInterval(this.pingInterval);
-      this.logger.info('Stopped periodic ping');
+    this.statusQueueAbortController.abort();
+    this.platformTradeReadyQueueAbortController.abort();
+    this.clearTimer("tokens");
+    this.clearTimer("ping");
+    this.clearTimer("trade");
+    this.clearTimer("marketItems");
+
+    if (this.statusQueueConsumePromise) {
+      await this.statusQueueConsumePromise;
+      this.statusQueueConsumePromise = null;
+    }
+
+    if (this.platformTradeReadyQueueConsumePromise) {
+      await this.platformTradeReadyQueueConsumePromise;
+      this.platformTradeReadyQueueConsumePromise = null;
     }
 
     await this.client.stop();
-    this.logger.info('Client stopped');
+  }
+
+  private clearTimer(timer: "tokens" | "ping" | "trade" | "marketItems"): void {
+    if (timer === "tokens" && this.tokensPollInterval) {
+      clearInterval(this.tokensPollInterval);
+      this.tokensPollInterval = null;
+    }
+
+    if (timer === "ping" && this.pingInterval) {
+      clearInterval(this.pingInterval);
+      this.pingInterval = null;
+    }
+
+    if (timer === "trade" && this.tradePollInterval) {
+      clearInterval(this.tradePollInterval);
+      this.tradePollInterval = null;
+    }
+
+    if (timer === "marketItems" && this.marketItemsPollTimeout) {
+      clearTimeout(this.marketItemsPollTimeout);
+      this.marketItemsPollTimeout = null;
+    }
   }
 }
 
+function shouldQueuePlatformRegistration(
+  message: TradeStatusQueueMessage,
+  trade: TradeOffer
+): boolean {
+  return message.status === 2 && Boolean(trade.offerId) && !trade.registeredWithPlatform;
+}
 
-export async function main() {
+function asOptionalString(value: unknown): string | undefined {
+  return value === undefined || value === null ? undefined : String(value);
+}
+
+function extractOfferSecret(offer: MarketP2POffer): string | null {
+  const messageSecret = offer.tradeoffermessage.trim().split(/\s+/)[0];
+
+  if (messageSecret) {
+    return messageSecret;
+  }
+
+  const hashSecret = offer.hash.trim().split(/\s+/)[0];
+  return hashSecret || null;
+}
+
+function normalizeMarketTimestamp(timestamp: number): number {
+  return timestamp > 10_000_000_000 ? timestamp : timestamp * 1000;
+}
+
+function mapTradeStatus(
+  message: TradeStatusQueueMessage,
+  currentStatus: TradeOffer["status"]
+): TradeOffer["status"] {
+  if (message.processingStatus === "failed" || message.status < 0) {
+    return "failed";
+  }
+
+  if (message.status === 3) {
+    return "accepted";
+  }
+
+  if (message.status === 5 || message.status === 6) {
+    return "cancelled";
+  }
+
+  if (message.status === 7 || message.status === 8 || message.status === 10) {
+    return "rejected";
+  }
+
+  if (message.processingStatus === "processed" || message.status === 2 || message.status === 9) {
+    return "sent";
+  }
+
+  return currentStatus;
+}
+
+export async function main(): Promise<void> {
   const integration = new MarketBotIntegration();
   let stopping = false;
 
@@ -382,24 +800,22 @@ export async function main() {
     await integration.stop();
   };
 
-  process.once('SIGINT', () => {
+  process.once("SIGINT", () => {
     void stopIntegration();
   });
 
-  process.once('SIGTERM', () => {
+  process.once("SIGTERM", () => {
     void stopIntegration();
   });
 
   try {
-    await integration.startTokensPolling();
-    await integration.startPeriodicPing();
-    logger.info('Integration started and running until shutdown signal');
+    await integration.start();
+    logger.info("Market bot integration started");
   } catch (error) {
-    logger.error(error, 'Integration error');
+    logger.error({ err: error }, "Market bot integration failed to start");
+    await stopIntegration();
+    process.exitCode = 1;
   }
 }
-
-// Uncomment to run:
-// main();
 
 export { MarketBotIntegration };

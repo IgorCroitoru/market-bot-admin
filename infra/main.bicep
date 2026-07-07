@@ -20,6 +20,11 @@ param projectName string = 'cs-tm-bot'
 ])
 param environmentName string
 
+@description('Trade table name used by tm-client.')
+param tradeTableName string
+
+@description('Market items table name used by tm-client.')
+param marketItemsTableName string
 
 @description('Extra resource tags.')
 param tags object = {}
@@ -30,8 +35,6 @@ param deployLocalDev bool = false
 @description('Your Microsoft Entra user object ID for local development. Required when deployLocalDev is true.')
 param developerObjectId string = ''
 
-@description('Queue name created for local development.')
-param localQueueName string = 'local-dev-queue'
 
 @description('Static Web App pricing tier.')
 @allowed([
@@ -106,6 +109,9 @@ param botTradeQueueName string
 @description('Name of the queue for outgoing trade statuses updates.')
 param botTradeStatusQueueName string
 
+@description('Queue name for Market trade-ready registration tasks.')
+param platformTradeReadyQueueName string = 'platform-trade-ready'
+
 @description('Create azure queue if not exists.')
 param botQueueCreateIfNotExists string = 'true'
 
@@ -115,7 +121,7 @@ param tradesStatusVisibilityTimeoutSeconds string = '60'
 @description('Number of messages to dequeue')
 param botQueueMaxMessages string = '4'
 
-@description('Max number of messages to dequeue')
+@description('Max attempts of dequeue before considering poison')
 param botQueueMaxDequeueCount string = '5'
 
 module naming './shared/naming.bicep' = {
@@ -180,6 +186,10 @@ module acr './acr/main.bicep' = {
 
 module staticApp './static-web-app/static-app.bicep' = {
   name: 'static-web-app-${environmentName}'
+  dependsOn: [
+    aca
+    localDev
+  ]
   params: {
     settings: staticWebAppSettings
   }
@@ -188,12 +198,16 @@ module staticApp './static-web-app/static-app.bicep' = {
 module localDev './local-dev/main.bicep' = if (deployLocalDev) {
   name: 'local-dev-${environmentName}'
   params: {
+    tradeTableName: tradeTableName
+    marketItemsTableName: marketItemsTableName
     location: effectiveResourceLocations.localDev
     storageAccountName: resourceNames.localStorage.name
     blobContainerName: resourceNames.blobContainer.name
     keyVaultName: resourceNames.localKeyVault.name
     developerObjectId: developerObjectId
-    queueName: localQueueName
+    tradesQueueName: botTradeQueueName
+    statusQueueName: botTradeStatusQueueName
+    platformTradeReadyQueueName: platformTradeReadyQueueName
     tags: localDevTags
   }
 }
@@ -209,9 +223,12 @@ module aca './aca/main.bicep' = {
       containerApp: effectiveResourceLocations.containerApp
       runtimeStorage: effectiveResourceLocations.runtimeStorage
     }
+    tradeTableName: tradeTableName
+    marketItemsTableName: marketItemsTableName
     tradesStatusVisibilityTimeoutSeconds: tradesStatusVisibilityTimeoutSeconds
     botTradeQueueName:  botTradeQueueName
     botTradeStatusQueueName: botTradeStatusQueueName
+    platformTradeReadyQueueName: platformTradeReadyQueueName
     botQueueCreateIfNotExists: botQueueCreateIfNotExists
     botQueueMaxDequeueCount: botQueueMaxDequeueCount
     botQueueMaxMessages: botQueueMaxMessages

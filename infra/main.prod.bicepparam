@@ -15,6 +15,12 @@ param projectName = 'cs-tm-bot'
 param environmentName = 'prod'
 
 param deployLocalDev = false
+param botTradeQueueName = 'trade-requests'
+param botTradeStatusQueueName = 'trade-status-update'
+param platformTradeReadyQueueName = 'platform-trade-ready'
+param botQueueCreateIfNotExists = 'true'
+param botQueueMaxDequeueCount = '5'
+param botQueueMaxMessages = '4'
 
 param staticWebAppSku = 'Standard'
 param appLocation = 'frontend'

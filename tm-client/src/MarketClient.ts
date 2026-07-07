@@ -14,6 +14,7 @@ import {
   RetryConfig,
   RateLimiterConfig,
   Currency,
+  ItemsResponse,
 } from './types';
 
 /**
@@ -403,7 +404,7 @@ export class MarketClient {
    * Get list of items
    * https://market.csgo.com/api/v2/items?key=[your_secret_key]
    */
-  async getItems(): Promise<any> {
+  async getItems(): Promise<ItemsResponse> {
     return this.executeWithRetry(async () => {
       const url = `/${this.version}/items?${this.buildQueryString()}`;
       const response = await this.axiosInstance.get<any>(url);

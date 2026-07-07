@@ -12,6 +12,15 @@ param botTradeQueueName string = 'trade-requests'
 @description('Trades status Queue name.')
 param botTradeStatusQueueName string = 'trade-status-update'
 
+@description('Queue name for Market trade-ready registration tasks.')
+param platformTradeReadyQueueName string
+
+@description('Trade table name used by tm-client.')
+param tradeTableName string
+
+@description('Market items table name used by tm-client.')
+param marketItemsTableName string
+
 @description('Blob container used by AzureBotStorage.')
 param blobContainerName string
 
@@ -30,6 +39,7 @@ param tags object = {
 
 var storageBlobDataContributorRoleId = 'ba92f5b4-2d11-453d-a403-e96b0029c9fe'
 var storageQueueContributorRoleId = '974c5e8b-45b9-4653-ba55-5f855dd0fb88'
+var storageTableDataContributorRoleId = '0a9a7e1f-b9d0-4cc4-a60d-0319b160aaa3'
 
 resource storageAccount 'Microsoft.Storage/storageAccounts@2024-01-01' = {
   name: storageAccountName
@@ -115,6 +125,35 @@ resource tradesStatusQueue 'Microsoft.Storage/storageAccounts/queueServices/queu
   }
 }
 
+resource platformTradeReadyQueue 'Microsoft.Storage/storageAccounts/queueServices/queues@2023-05-01' = {
+  parent: queueService
+  name: platformTradeReadyQueueName
+  properties: {
+    metadata: {}
+  }
+}
+
+resource tableService 'Microsoft.Storage/storageAccounts/tableServices@2023-05-01' = {
+  parent: storageAccount
+  name: 'default'
+}
+
+resource tradesTable 'Microsoft.Storage/storageAccounts/tableServices/tables@2023-05-01' = {
+  parent: tableService
+  name: tradeTableName
+  properties: {
+    signedIdentifiers: []
+  }
+}
+
+resource marketItemsTable 'Microsoft.Storage/storageAccounts/tableServices/tables@2023-05-01' = {
+  parent: tableService
+  name: marketItemsTableName
+  properties: {
+    signedIdentifiers: []
+  }
+}
+
 // Runtime identity contributor
 resource queueDataContributorAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
   name: guid(storageAccount.id, runtimeIdentityPrincipalId, storageQueueContributorRoleId)
@@ -144,6 +183,34 @@ resource queueDataUserContributorAssignment 'Microsoft.Authorization/roleAssignm
   }
 }
 
+resource tableDataContributorAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+  name: guid(storageAccount.id, runtimeIdentityPrincipalId, storageTableDataContributorRoleId)
+  scope: storageAccount
+  properties: {
+    principalId: runtimeIdentityPrincipalId
+    principalType: 'ServicePrincipal'
+    roleDefinitionId: subscriptionResourceId(
+      'Microsoft.Authorization/roleDefinitions',
+      storageTableDataContributorRoleId
+    )
+  }
+}
+
+resource tableDataUserContributorAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+  name: guid(storageAccount.id, developerObjectId, storageTableDataContributorRoleId)
+  scope: storageAccount
+  properties: {
+    principalId: developerObjectId
+    principalType: 'User'
+    roleDefinitionId: subscriptionResourceId(
+      'Microsoft.Authorization/roleDefinitions',
+      storageTableDataContributorRoleId
+    )
+  }
+}
+
 output storageAccountName string = storageAccount.name
 output blobContainerName string = blobContainer.name
 output blobEndpoint string = storageAccount.properties.primaryEndpoints.blob
+output tradeTableName string = tradesTable.name
+output marketItemsTableName string = marketItemsTable.name

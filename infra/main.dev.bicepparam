@@ -18,12 +18,18 @@ param environmentName = 'dev'
 param developerPermissionToWriteKv = true
 param deployLocalDev = true
 param developerObjectId = '6db7fa80-16c3-4e11-9e65-6175c6fde0af'
-param localQueueName = 'local-dev-queue'
+// param localTradesQueueName = 'trade-requests'
+// param localStatusQueueName = 'trade-status-update'
+// param localPlatformTradeReadyQueueName = 'platform-trade-ready'
 param botQueueCreateIfNotExists = 'true'
 param botQueueMaxDequeueCount = '5'
 param botQueueMaxMessages = '4'
 param botTradeQueueName ='trade-requests'
 param botTradeStatusQueueName='trade-status-update'
+param platformTradeReadyQueueName = 'platform-trade-ready'
+
+param tradeTableName = 'Trades'
+param marketItemsTableName = 'MarketItems'
 
 param staticWebAppSku = 'Free'
 param appLocation = 'frontend'

@@ -1,5 +1,7 @@
-@description('Queue name.')
-param queueName string
+
+
+@description('Queue names.')
+param queueNames array
 
 @description('User account object ID for role assignment.')
 param developerObjectId string
@@ -19,13 +21,15 @@ resource queueService 'Microsoft.Storage/storageAccounts/queueServices@2023-05-0
   name: 'default'
 }
 
-resource queue 'Microsoft.Storage/storageAccounts/queueServices/queues@2023-05-01' = {
-  parent: queueService
-  name: queueName
-  properties: {
-    metadata: {}
+resource queues 'Microsoft.Storage/storageAccounts/queueServices/queues@2023-05-01' = [
+  for name in queueNames: {
+    parent: queueService
+    name: name
+    properties: {
+      metadata: {}
+    }
   }
-}
+]
 
 resource queueDataContributorAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
   name: guid(storageAccountExisting.id, developerObjectId, storageQueueDataContributorRoleId)

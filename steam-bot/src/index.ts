@@ -1,11 +1,9 @@
-import dotenv from "dotenv";
+import "dotenv/config";
 import { Bot } from "./Bot";
 import { loadBotOptionsFromEnv, loadTaskControllerOptionsFromEnv } from "./config";
 import { createBotStorageFromEnv } from "./storage";
 import { logger } from "./logger";
 import { TaskController } from "./TaskController";
-
-dotenv.config();
 
 export {
   Bot,

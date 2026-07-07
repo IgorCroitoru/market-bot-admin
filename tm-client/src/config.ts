@@ -1,8 +1,7 @@
-import { z, numberFromEnv, booleanFromEnv } from "@market-bot-admin/config"
+import { z, numberFromEnv, booleanFromEnv, optionalTrimmedString } from "@market-bot-admin/config"
 import { ApiVersion, ClientOptions } from "./types";
-import { AzureQueueConfig } from "../../packages/queue/dist/AzureStorageQueue";
-import { AzureBotStorageOptions } from "../../packages/storage/dist/AzureBlobStorage";
-import { AzureTableJsonStorageOptions } from "../../packages/storage/dist/AzureTableStorage";
+import { AzureQueueConfig } from "@market-bot-admin/queue";
+import { AzureBotStorageOptions, AzureTableJsonStorageOptions } from "@market-bot-admin/storage";
 
 const envSchema = z.object({
   NODE_ENV: z.enum(["dev", "prod", "test"]).default("dev"),
@@ -19,13 +18,24 @@ const envSchema = z.object({
   MAX_BACKOFF_MS: numberFromEnv(10000),
   REQUESTS_PER_SECOND: numberFromEnv(5),
   PING_INTERVAL_MS: numberFromEnv(180000), // 3 minutes
+  MARKET_TRADE_POLL_INTERVAL_MS: numberFromEnv(15000),
+  MARKET_TRADE_EMPTY_POLL_INTERVAL_MS: numberFromEnv(30000),
+  MARKET_TRADE_OFFER_TTL_MS: numberFromEnv(5 * 60_000),
+  MARKET_ITEMS_POLL_INTERVAL_MS: numberFromEnv(5 * 60_000),
+  MARKET_ITEMS_EMPTY_POLL_INTERVAL_MS: numberFromEnv(30 * 60_000),
 });
 
 const azureQueueConfigSchema = z.object({
-  AZURE_QUEUE_CONNECTION_STRING: z.string().optional(),
-  AZURE_QUEUE_ACCOUNT_NAME: z.string().optional(),
+  AZURE_QUEUE_CONNECTION_STRING: optionalTrimmedString(),
+  AZURE_QUEUE_ACCOUNT_NAME: optionalTrimmedString(),
+  AZURE_STORAGE_ACCOUNT_NAME: optionalTrimmedString(),
   AZURE_QUEUE_CREATE_IF_NOT_EXISTS: booleanFromEnv(false),
-  AZURE_QUEUE_NAME: z.string()
+  BOT_INCOMING_TRADE_QUEUE_NAME: optionalTrimmedString(),
+  BOT_TRADE_STATUS_QUEUE_NAME: optionalTrimmedString(),
+  PLATFORM_TRADE_READY_QUEUE_NAME: optionalTrimmedString(),
+  BOT_QUEUE_VISIBILITY_TIMEOUT_SECONDS: numberFromEnv(60),
+  BOT_QUEUE_MAX_MESSAGES: numberFromEnv(4),
+  BOT_QUEUE_MAX_DEQUEUE_COUNT: numberFromEnv(5),
 });
 
 const azureBlobStorageConfigSchema = z.object({
@@ -36,9 +46,12 @@ const azureBlobStorageConfigSchema = z.object({
 
 const azureTableStorageConfigSchema = z
   .object({
-    AZURE_STORAGE_ACCOUNT_NAME: z.string().min(1),
+    AZURE_STORAGE_ACCOUNT_NAME: optionalTrimmedString(),
+    AZURE_TABLE_CONNECTION_STRING: optionalTrimmedString(),
     AZURE_TRADE_TABLE_NAME: z.string().min(1),
+    AZURE_MARKET_ITEMS_TABLE_NAME: z.string().min(1).default("MarketItems"),
     AZURE_TABLE_PARTITION_KEY: z.string().min(1).optional(),
+    AZURE_TABLE_CREATE_IF_NOT_EXISTS: booleanFromEnv(false),
   })
   .transform((config) => ({
     ...config,
@@ -76,21 +89,83 @@ export function loadAzureBlobStorageOptionsFromEnv(env: NodeJS.ProcessEnv = proc
    }
   }
 
-export function loadAzureQueueOptionsFromEnv(env: NodeJS.ProcessEnv = process.env): AzureQueueConfig {
+export function loadAzureTradeQueueOptionsFromEnv(env: NodeJS.ProcessEnv = process.env): AzureQueueConfig {
   const config = loadAzureQueueZodConfigFromEnv(env);
+  return createAzureQueueOptions(config, config.BOT_INCOMING_TRADE_QUEUE_NAME);
+}
+
+export function loadAzureStatusQueueOptionsFromEnv(env: NodeJS.ProcessEnv = process.env): AzureQueueConfig {
+  const config = loadAzureQueueZodConfigFromEnv(env);
+  return createAzureQueueOptions(config, config.BOT_TRADE_STATUS_QUEUE_NAME);
+}
+
+export function loadAzurePlatformTradeReadyQueueOptionsFromEnv(env: NodeJS.ProcessEnv = process.env): AzureQueueConfig {
+  const config = loadAzureQueueZodConfigFromEnv(env);
+  return createAzureQueueOptions(config, config.PLATFORM_TRADE_READY_QUEUE_NAME);
+}
+
+export function loadAzureQueueConsumerOptionsFromEnv(env: NodeJS.ProcessEnv = process.env) {
+  const config = loadAzureQueueZodConfigFromEnv(env);
+
   return {
-    queueName: config.AZURE_QUEUE_NAME,
-    storageAccountName: config.AZURE_QUEUE_ACCOUNT_NAME,
+    visibilityTimeoutSeconds: config.BOT_QUEUE_VISIBILITY_TIMEOUT_SECONDS,
+    maxMessages: config.BOT_QUEUE_MAX_MESSAGES,
+    maxDequeueCount: config.BOT_QUEUE_MAX_DEQUEUE_COUNT,
+  };
+}
+
+function createAzureQueueOptions(
+  config: AzureQueueZodConfig,
+  queueName: string | undefined
+): AzureQueueConfig {
+  const storageAccountName = config.AZURE_QUEUE_ACCOUNT_NAME ?? config.AZURE_STORAGE_ACCOUNT_NAME;
+
+  if (!queueName) {
+    throw new Error(
+      "A queue name is required. Set BOT_INCOMING_TRADE_QUEUE_NAME, BOT_TRADE_STATUS_QUEUE_NAME, or PLATFORM_TRADE_READY_QUEUE_NAME."
+    );
+  }
+
+  if (!config.AZURE_QUEUE_CONNECTION_STRING && !storageAccountName) {
+    throw new Error(
+      "Azure queue config requires AZURE_QUEUE_CONNECTION_STRING, AZURE_QUEUE_ACCOUNT_NAME, or AZURE_STORAGE_ACCOUNT_NAME."
+    );
+  }
+
+  return {
+    queueName,
+    connectionString: config.AZURE_QUEUE_CONNECTION_STRING,
+    storageAccountName,
     createIfNotExists: config.AZURE_QUEUE_CREATE_IF_NOT_EXISTS,
   }
 }
 
 export function loadAzureTableStorageOptionsFromEnv(env: NodeJS.ProcessEnv = process.env): AzureTableJsonStorageOptions {
   const config = loadAzureTableStorageConfigFromEnv(env);
+  return createAzureTableStorageOptions(config, config.AZURE_TRADE_TABLE_NAME);
+}
+
+export function loadAzureMarketItemsTableStorageOptionsFromEnv(env: NodeJS.ProcessEnv = process.env): AzureTableJsonStorageOptions {
+  const config = loadAzureTableStorageConfigFromEnv(env);
+  return createAzureTableStorageOptions(config, config.AZURE_MARKET_ITEMS_TABLE_NAME);
+}
+
+function createAzureTableStorageOptions(
+  config: AzureTableStorageZodConfig,
+  tableName: string
+): AzureTableJsonStorageOptions {
+  if (!config.AZURE_TABLE_CONNECTION_STRING && !config.AZURE_STORAGE_ACCOUNT_NAME) {
+    throw new Error(
+      "Azure table storage config requires AZURE_TABLE_CONNECTION_STRING or AZURE_STORAGE_ACCOUNT_NAME."
+    );
+  }
+
   return {
-    tableName: config.AZURE_TRADE_TABLE_NAME,
+    tableName,
     partitionKey: config.AZURE_TABLE_PARTITION_KEY,
-    storageAccountName: config.AZURE_STORAGE_ACCOUNT_NAME
+    connectionString: config.AZURE_TABLE_CONNECTION_STRING,
+    storageAccountName: config.AZURE_STORAGE_ACCOUNT_NAME,
+    createTableIfNotExists: config.AZURE_TABLE_CREATE_IF_NOT_EXISTS
   }
 }
 
@@ -107,6 +182,11 @@ export function loadApiOptionsFromEnv(env: NodeJS.ProcessEnv = process.env): Cli
     retryBackoffMultiplier: config.RETRY_BACKOFF_MULTIPLIER,
     maxBackoffMs: config.MAX_BACKOFF_MS,
     pingIntervalMs: config.PING_INTERVAL_MS,
+    marketTradePollIntervalMs: config.MARKET_TRADE_POLL_INTERVAL_MS,
+    marketTradeEmptyPollIntervalMs: config.MARKET_TRADE_EMPTY_POLL_INTERVAL_MS,
+    marketTradeOfferTtlMs: config.MARKET_TRADE_OFFER_TTL_MS,
+    marketItemsPollIntervalMs: config.MARKET_ITEMS_POLL_INTERVAL_MS,
+    marketItemsEmptyPollIntervalMs: config.MARKET_ITEMS_EMPTY_POLL_INTERVAL_MS,
     requestTimeoutMs: config.REQUEST_TIMEOUT_MS,
   }
 }

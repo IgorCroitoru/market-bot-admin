@@ -7,9 +7,11 @@ export type BlobNameMap<TItems extends Record<string, unknown>> = {
 };
 
 export interface AzureBotStorageOptions {
+    /**Steam account name */
   accountName: string;
   containerName: string;
-  storageAccountName: string;
+  storageAccountName?: string;
+  connectionString?: string
 }
 
 export class AzureBlobStorage<TItems extends Record<string, unknown> = any> implements Storage<TItems> {
@@ -19,6 +21,13 @@ export class AzureBlobStorage<TItems extends Record<string, unknown> = any> impl
 
     constructor(options: AzureBotStorageOptions) {
         this.accountName = options.accountName;
+        
+        if(options.connectionString){
+            const azureBlobServiceClient = BlobServiceClient.fromConnectionString(options.connectionString)
+            this.container = azureBlobServiceClient.getContainerClient(options.containerName);
+            return;
+        }
+
         const credential = new DefaultAzureCredential();
         const azureBlobServiceClient = new BlobServiceClient(
             `https://${options.storageAccountName}.blob.core.windows.net`,

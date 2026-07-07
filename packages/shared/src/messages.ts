@@ -17,6 +17,7 @@ export type TradeRequest = {
   token?: string;
   message?: string;
   createdAt?: number | string | Date;
+  deadlineAt?: number | string | Date;
   timestamp?: number | string | Date;
   itemsToGive?: TradeItem[];
   itemsToReceive?: TradeItem[];
@@ -57,3 +58,18 @@ export type TradeStatusChangedMessage = {
 }
 
 export type TradeStatusQueueMessage = TradeStatusChangedMessage;
+
+export type PlatformTradeReadyMessage = {
+    type: 'platform-trade-ready';
+    /**
+     * App internal id / Market hash from trade-request-give-p2p-all.
+     */
+    tradeOfferId: string;
+    /**
+     * Steam offer id returned by steam-tradeoffer-manager.
+     */
+    offerId: string | number;
+    statusQueueMessageId?: string;
+    createdAt: number;
+    data?: Record<string, unknown>;
+}

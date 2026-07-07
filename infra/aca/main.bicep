@@ -59,11 +59,20 @@ param blobContainerName string
 @description('Bot storage name')
 param storageAccountName string
 
+@description('Trade table name used by tm-client.')
+param tradeTableName string
+
+@description('Market items table name used by tm-client.')
+param marketItemsTableName string
+
 @description('Name of the queue for incoming trades requests.')
 param botTradeQueueName string
 
 @description('Name of the queue for outgoing trade statuses updates.')
 param botTradeStatusQueueName string
+
+@description('Queue name for Market trade-ready registration tasks.')
+param platformTradeReadyQueueName string = 'platform-trade-ready'
 
 @description('Create azure queue if not exists.')
 param botQueueCreateIfNotExists string
@@ -210,8 +219,11 @@ module botStorage './bot-storage.bicep' = {
     containerApp
   ]
   params: {
+    tradeTableName: tradeTableName
+    marketItemsTableName: marketItemsTableName
     botTradeQueueName: botTradeQueueName
     botTradeStatusQueueName: botTradeStatusQueueName
+    platformTradeReadyQueueName: platformTradeReadyQueueName
     developerObjectId: developerObjectId
     storageAccountName: storageAccountName
     blobContainerName: blobContainerName
