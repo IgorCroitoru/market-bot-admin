@@ -1,5 +1,6 @@
 import type { AppLogger } from "@market-bot-admin/logging";
-import type { BotStorage } from "./Persistence";
+import type { BotStorageItems } from "@market-bot-admin/shared";
+import type { KeyValueStore } from "@market-bot-admin/storage";
 
 export type SteamTokenPlatform = "mobile" | "web" | "client";
 
@@ -30,7 +31,7 @@ export interface BotOptions {
   accessTokenRefreshSkewMs?: number;
   refreshTokenRenewalWindowMs?: number;
   tokenPlatform?: SteamTokenPlatform;
-  storage?: BotStorage;
+  storage?: KeyValueStore<BotStorageItems>;
   logger?: AppLogger;
 }
 

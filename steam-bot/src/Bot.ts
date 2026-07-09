@@ -11,7 +11,6 @@ import {
 } from "steam-session";
 import type { AppLogger } from "@market-bot-admin/logging";
 import type { BotOptions, SteamTokenPlatform } from "./IOptions";
-import type { BotStorage } from "./Persistence";
 import type { PollData } from "./PollData";
 import {
   getSteamLoginSecureJwt,
@@ -22,12 +21,14 @@ import {
 import { isRetriableError, withRetries, delay } from "./retry";
 import { logger as defaultLogger } from "./logger";
 import { createBotStorageFromEnv } from "./storage";
-import { TokenCache } from "./storage/AzureBotStorage";
 import CEconItem from "steamcommunity/classes/CEconItem";
 import type {
   TradeItem,
   TradeRequest as SendTradeOfferRequest,
+  TokenCache,
+  BotStorageItems,
 } from "@market-bot-admin/shared";
+import { KeyValueStore } from "@market-bot-admin/storage";
 
 export type {
   TradeItem,
@@ -142,7 +143,7 @@ export interface BotHealthSnapshot {
 export class Bot extends EventEmitter {
   public readonly community: SteamCommunity;
   public readonly tradeManager: TradeOfferManager;
-  public readonly storage: BotStorage;
+  public readonly storage: KeyValueStore<BotStorageItems>;
 
   private readonly log: AppLogger;
   private readonly options: Required<
@@ -261,7 +262,7 @@ export class Bot extends EventEmitter {
     inventory: BotInventorySnapshot,
   ): Promise<void> {
     this.inventoryCache = inventory;
-    await this.storage.saveInventorySnapshot(inventory).catch((error) => {
+    await this.storage.set("inventory-snapshot",inventory).catch((error) => {
       this.log.warn(
         { err: error },
         "Failed to save inventory snapshot to storage",
@@ -273,7 +274,7 @@ export class Bot extends EventEmitter {
       ...this._tokenCache,
       ...patch,
     };
-    await this.storage.saveTokenCache(this._tokenCache).catch((error) => {
+    await this.storage.set("token-cache", this._tokenCache).catch((error) => {
       this.log.warn({ err: error }, "Failed to save token cache to storage");
     });
   }
@@ -872,10 +873,10 @@ export class Bot extends EventEmitter {
   private async restoreState(): Promise<void> {
     const [loginAttempts, pollData, tokenCache, inventorySnapshot] =
       await Promise.all([
-        this.storage.loadLoginAttempts(),
-        this.storage.loadPollData(),
-        this.storage.loadTokenCache(),
-        this.storage.loadInventorySnapshot(),
+        this.storage.get("login-attempts"),
+        this.storage.get("poll-data"),
+        this.storage.get("token-cache"),
+        this.storage.get("inventory-snapshot")
       ]);
 
     this.loginAttempts = this.normalizeLoginAttempts(loginAttempts ?? []);
@@ -1053,7 +1054,7 @@ export class Bot extends EventEmitter {
 
     const refreshToken =
       this._tokenCache.refreshToken ??
-      (await this.storage.loadTokenCache())?.refreshToken;
+      (await this.storage.get("token-cache"))?.refreshToken;
 
     if (!isJwtUsable(refreshToken, this.options.tokenRefreshSkewMs)) {
       this.log.warn(
@@ -1309,7 +1310,7 @@ export class Bot extends EventEmitter {
     this.eventsBound = true;
 
     this.tradeManager.on("pollData", (pollData: PollData) => {
-      this.storage.savePollData(pollData).catch((error) => {
+      this.storage.set("poll-data", pollData).catch((error) => {
         this.log.warn({ err: error }, "Failed to save Steam poll data");
       });
       this.emit("pollData", pollData);
@@ -1397,7 +1398,7 @@ export class Bot extends EventEmitter {
   private recordLoginAttempt(): void {
     this.loginAttempts = [...this.recentLoginAttempts(), Date.now()];
     this.storage
-      .saveLoginAttempts(
+      .set("login-attempts",
         this.loginAttempts.map((attempt) => Math.floor(attempt / 1000)),
       )
       .catch((error) => {

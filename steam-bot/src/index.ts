@@ -18,9 +18,8 @@ export {
 export { loadBotConfigFromEnv, loadBotOptionsFromEnv, type BotRuntimeConfig } from "./config";
 export { TaskController, type IncomingTradeTaskMessage, type TradeStatusQueueMessage } from "./TaskController";
 export { isRetriableError, withRetries } from "./retry";
-export { LocalBotStorage, AzureBotStorage, createBotStorageFromEnv } from "./storage";
+export { LocalBotStorage, AzureBlobStorage, createBotStorageFromEnv } from "./storage";
 export type { BotOptions, SteamTokenPlatform } from "./IOptions";
-export type { BotStorage, BotPersistence } from "./Persistence";
 export type { PollData, OfferData } from "./PollData";
 
 async function main(): Promise<void> {

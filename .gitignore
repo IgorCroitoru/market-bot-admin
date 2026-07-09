@@ -28,3 +28,10 @@ local.*
 *.tsbuildinfo
 
 test-steam-bot
+
+# Terraform
+**/.terraform/
+*.tfstate
+*.tfstate.*
+*.tfvars
+!*.tfvars.example

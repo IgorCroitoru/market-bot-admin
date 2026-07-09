@@ -1,5 +1,6 @@
-import type { BotStorage } from "./Persistence";
 import type { PollData } from "./PollData";
+import type { BotStorageItems } from "@market-bot-admin/shared";
+import type { KeyValueStore } from "@market-bot-admin/storage";
 
 export interface PauseState {
   paused: boolean;
@@ -19,13 +20,13 @@ export interface OnRun {
 }
 
 export class Handler {
-  constructor(private readonly storage: BotStorage) {}
+  constructor(private readonly storage: KeyValueStore<BotStorageItems>) {}
 
   async onRun(): Promise<OnRun> {
     const [loginAttempts, pollData, pauseStates] = await Promise.all([
-      this.storage.loadLoginAttempts(),
-      this.storage.loadPollData(),
-      this.storage.loadData<PauseStates>("pause-states")
+      this.storage.get("login-attempts"),
+      this.storage.get("poll-data"),
+      this.storage.getUnknown<PauseStates>("pause-states")
     ]);
 
     return {
@@ -41,7 +42,7 @@ export class Handler {
   }
 
   onPollData(pollData: PollData): Promise<void> {
-    return this.storage.savePollData(pollData);
+    return this.storage.set("poll-data", pollData);
   }
 
   // onRefreshToken(token: string): Promise<void> {
@@ -57,17 +58,17 @@ export class Handler {
   // }
 
   onLoginAttempts(attempts: number[]): Promise<void> {
-    return this.storage.saveLoginAttempts(attempts);
+    return this.storage.set("login-attempts", attempts);
   }
 
   async setPauseState(type: PauseType, state: PauseState): Promise<void> {
-    const states = (await this.storage.loadData<PauseStates>("pause-states")) ?? {};
+    const states = (await this.storage.getUnknown<PauseStates>("pause-states")) ?? {};
     states[type] = state;
-    await this.storage.saveData("pause-states", states);
+    await this.storage.setUnknown("pause-states", states);
   }
 
   async getPauseState(type: PauseType): Promise<PauseState> {
-    const states = (await this.storage.loadData<PauseStates>("pause-states")) ?? {};
+    const states = (await this.storage.getUnknown<PauseStates>("pause-states")) ?? {};
 
     return (
       states[type] ?? {

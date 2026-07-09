@@ -1,16 +1,14 @@
 import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
-import type { BotStorage } from "../Persistence";
-import type { PollData } from "../PollData";
-import { TokenCache } from "./AzureBotStorage";
-import { BotInventorySnapshot } from "../Bot";
+import type { BotStorageItems } from "@market-bot-admin/shared";
+import type { KeyValueStore } from "@market-bot-admin/storage";
 
 export interface LocalBotStorageOptions {
   accountName: string;
   rootDir?: string;
 }
 
-export class LocalBotStorage implements BotStorage {
+export class LocalBotStorage implements KeyValueStore<BotStorageItems> {
   private readonly dataDir: string;
 
   constructor(options: LocalBotStorageOptions) {
@@ -19,37 +17,37 @@ export class LocalBotStorage implements BotStorage {
 
     this.dataDir = path.join(rootDir, accountDir, "data");
   }
-  async saveInventorySnapshot(snapshot: BotInventorySnapshot): Promise<void> {
-    await this.saveData("inventory-snapshot", snapshot);
 
-  }
-  async loadInventorySnapshot(): Promise<BotInventorySnapshot | null> {
-    return this.loadData<BotInventorySnapshot>("inventory-snapshot");
-  }
-  async saveTokenCache(tokenCache: TokenCache): Promise<void> {
-    await this.saveData("token-cache", tokenCache);
-  }
-  async loadTokenCache(): Promise<TokenCache | null> {
-    return this.loadData<TokenCache>("token-cache");
-  }
-
-  async savePollData(pollData: PollData): Promise<void> {
-    await this.saveData("poll-data", pollData);
-  }
-
-  async loadPollData(): Promise<PollData | null> {
-    return this.loadData<PollData>("poll-data");
-  }
-
-  async saveData<T>(key: string, data: T): Promise<void> {
-    await mkdir(this.dataDir, { recursive: true });
-    await writeFile(this.dataPath(key), JSON.stringify(data, null, 2), "utf8");
-  }
-
-  async loadData<T>(key: string): Promise<T | null> {
+  async delete(key: string): Promise<void> {
     try {
+      await rm(this.dataPath(key));
+    } catch (error) {
+      if (isMissingFile(error)) return;
+      throw error;
+    }
+  }
+
+  async set<TKey extends Extract<keyof BotStorageItems, string>>(
+    key: TKey,
+    data: BotStorageItems[TKey]
+  ): Promise<void> {
+    await this.setUnknown(key, data);
+  }
+
+  async setUnknown<TValue = unknown>(key: string, value: TValue): Promise<void> {
+    await mkdir(this.dataDir, { recursive: true });
+    await writeFile(this.dataPath(key), JSON.stringify(value, null, 2), "utf8");
+  }
+  async get<TKey extends Extract<keyof BotStorageItems, string>>(
+    key: TKey
+  ): Promise<BotStorageItems[TKey] | null> {
+    return this.getUnknown<BotStorageItems[TKey]>(key);
+  }
+
+  async getUnknown<TValue = unknown>(key: string): Promise<TValue | null> {
+     try {
       const content = await readFile(this.dataPath(key), "utf8");
-      return JSON.parse(content) as T;
+      return JSON.parse(content) as TValue;
     } catch (error) {
       if (isMissingFile(error)) {
         return null;
@@ -58,15 +56,6 @@ export class LocalBotStorage implements BotStorage {
       throw error;
     }
   }
-
-  async saveLoginAttempts(attempts: number[]): Promise<void> {
-    await this.saveData("login-attempts", attempts);
-  }
-
-  async loadLoginAttempts(): Promise<number[] | null> {
-    return this.loadData<number[]>("login-attempts");
-  }
-
 
   private dataPath(key: string): string {
     return path.join(this.dataDir, `${sanitizePathPart(key)}.json`);

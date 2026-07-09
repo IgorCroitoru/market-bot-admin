@@ -1,11 +1,11 @@
-import { TableStorage } from "../../packages/storage/dist/interfaces";
+import { EntityStore } from "../../packages/storage/dist/interfaces";
 import { ItemInfo } from "./types";
 import { MarketItemRecord, MarketItemsSnapshotRecord } from "./types/schemas";
 
 const SNAPSHOT_ROW_KEY = "latest";
 
 export class MarketItemsStorageService {
-  constructor(private readonly storage: TableStorage) {}
+  constructor(private readonly storage: EntityStore) {}
 
   async saveMarketItem(item: ItemInfo, polledAt: string): Promise<void> {
     const existingRecord = await this.getMarketItem(item.item_id);
@@ -24,18 +24,18 @@ export class MarketItemsStorageService {
       },
     };
 
-    await this.storage.saveData(item.item_id, record);
+    await this.storage.set(item.item_id, record);
   }
 
   async saveSnapshot(snapshot: Omit<MarketItemsSnapshotRecord, "id">): Promise<void> {
-    await this.storage.saveData(SNAPSHOT_ROW_KEY, {
+    await this.storage.set(SNAPSHOT_ROW_KEY, {
       id: SNAPSHOT_ROW_KEY,
       ...snapshot,
     });
   }
 
   async getMarketItem(itemId: string): Promise<MarketItemRecord | null> {
-    return this.storage.getData<MarketItemRecord>(itemId);
+    return this.storage.get<MarketItemRecord>(itemId);
   }
 }
 

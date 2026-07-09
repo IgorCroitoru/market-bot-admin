@@ -1,10 +1,7 @@
 import { BlobServiceClient, ContainerClient } from "@azure/storage-blob";
-import { ReadonlyStorage, Storage } from "./interfaces";
+import { KeyValueReader, KeyValueStore } from "./interfaces";
 import { DefaultAzureCredential } from "@azure/identity";
 
-export type BlobNameMap<TItems extends Record<string, unknown>> = {
-  [K in keyof TItems & string]: string;
-};
 
 export interface AzureBotStorageOptions {
     /**Steam account name */
@@ -14,7 +11,7 @@ export interface AzureBotStorageOptions {
   connectionString?: string
 }
 
-export class AzureBlobStorage<TItems extends Record<string, unknown> = any> implements Storage<TItems> {
+export class AzureBlobStorage<TItems extends Record<string, unknown> = any> implements KeyValueStore<TItems> {
     private readonly accountName: string;
     private readonly container: ContainerClient;
     private ensureContainerPromise: Promise<void> | null = null;
@@ -35,6 +32,24 @@ export class AzureBlobStorage<TItems extends Record<string, unknown> = any> impl
         );
 
         this.container = azureBlobServiceClient.getContainerClient(options.containerName);
+    }
+    async set<TKey extends Extract<keyof TItems, string>>(key: TKey, value: TItems[TKey]): Promise<void> {
+        return this.saveData(key, value);
+    }
+    async setUnknown<TValue = unknown>(key: string, value: TValue): Promise<void> {
+        return this.saveGenericData(key, value);
+    }
+    async delete(key: string): Promise<void> {
+        return this.ensureContainer().then(async () => {
+            const blob = this.container.getBlockBlobClient(this.blobName(key));
+            await blob.deleteIfExists();
+        });
+    }
+    get<TKey extends Extract<keyof TItems, string>>(key: TKey): Promise<TItems[TKey] | null> {
+        return this.getData(key);
+    }
+    getUnknown<TValue = unknown>(key: string): Promise<TValue | null> {
+        return this.getGenericData<TValue>(key);
     }
     async saveGenericData<T>(key: string, value: T): Promise<void> {
         await this.ensureContainer();

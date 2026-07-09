@@ -1,5 +1,5 @@
 import { AzureStorageQueue } from "@market-bot-admin/queue";
-import { AzureBlobStorage, AzureTableJsonStorage, ReadonlyStorage } from "@market-bot-admin/storage";
+import { AzureBlobStorage, AzureTableJsonStorage, KeyValueStore } from "@market-bot-admin/storage";
 import type {
   BotStorageItems,
   IncomingTradeTaskMessage,
@@ -35,7 +35,7 @@ class MarketBotIntegration {
   private readonly tradeQueue: AzureStorageQueue<IncomingTradeTaskMessage>;
   private readonly statusQueue: AzureStorageQueue<TradeStatusQueueMessage>;
   private readonly platformTradeReadyQueue: AzureStorageQueue<PlatformTradeReadyMessage>;
-  private readonly botStorage: ReadonlyStorage<BotStorageItems>;
+  private readonly botStorage: KeyValueStore<BotStorageItems>;
   private readonly tradesService: TradeStorageService;
   private readonly marketItemsService: MarketItemsStorageService;
   private readonly logger: AppLogger;
@@ -95,7 +95,7 @@ class MarketBotIntegration {
 
   async loadTokensFromStorage(): Promise<void> {
     try {
-      this.tokensCache = await this.botStorage.getData("token-cache");
+      this.tokensCache = await this.botStorage.get("token-cache");
       
     } catch (error) {
       this.logger.error({ err: error }, "Error loading tokens from storage");
