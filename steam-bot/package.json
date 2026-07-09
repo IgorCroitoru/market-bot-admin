@@ -25,7 +25,7 @@
     "@market-bot-admin/queue": "file:../packages/queue",
     "@market-bot-admin/shared": "file:../packages/shared",
     "@market-bot-admin/config": "file:../packages/config",
-    "@market-bot-admin/storage": "file:..packages/storage",
+    "@market-bot-admin/storage": "file:../packages/storage",
     "dotenv": "^17.4.2",
     "jsonwebtoken": "^9.0.3",
     "steam-session": "^1.9.4",
