@@ -1,0 +1,122 @@
+name: Deploy OCI VM
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/deploy-oci.yml"
+      - "package.json"
+      - "package-lock.json"
+      - "packages/**"
+      - "steam-bot/**"
+      - "tm-client/**"
+      - "infra/oci/**"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-oci
+  cancel-in-progress: false
+
+env:
+  NODE_VERSION: "22"
+  OCI_HOST: ${{ vars.OCI_HOST }}
+  OCI_USER: ${{ vars.OCI_USER || 'opc' }}
+  OCI_ARTIFACT_DIR: ${{ vars.OCI_ARTIFACT_DIR || '/opt/market-bot/artifacts' }}
+  ARTIFACT_NAME: market-bot-admin-${{ github.sha }}.tar.gz
+  RELEASE_ID: ${{ github.sha }}
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Validate deployment settings
+        shell: bash
+        env:
+          OCI_SSH_PRIVATE_KEY: ${{ secrets.OCI_SSH_PRIVATE_KEY }}
+        run: |
+          set -euo pipefail
+
+          test -n "$OCI_HOST" || {
+            echo "Missing GitHub repository variable: OCI_HOST"
+            exit 1
+          }
+
+          test -n "$OCI_SSH_PRIVATE_KEY" || {
+            echo "Missing GitHub repository secret: OCI_SSH_PRIVATE_KEY"
+            exit 1
+          }
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci --install-links
+
+      - name: Build runtime packages
+        run: npm run build
+
+      - name: Create deployment artifact
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          mkdir -p .deploy
+          tar \
+            --exclude='.git' \
+            --exclude='.github' \
+            --exclude='.deploy' \
+            --exclude='node_modules' \
+            --exclude='**/node_modules' \
+            --exclude='**/.terraform' \
+            --exclude='*.tfstate' \
+            --exclude='*.tfstate.*' \
+            --exclude='*.tfvars' \
+            -czf ".deploy/$ARTIFACT_NAME" .
+
+      - name: Configure SSH
+        shell: bash
+        env:
+          OCI_SSH_PRIVATE_KEY: ${{ secrets.OCI_SSH_PRIVATE_KEY }}
+          OCI_SSH_KNOWN_HOSTS: ${{ secrets.OCI_SSH_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+
+          install -d -m 700 ~/.ssh
+          printf '%s\n' "$OCI_SSH_PRIVATE_KEY" > ~/.ssh/oci_vm
+          chmod 600 ~/.ssh/oci_vm
+
+          if [ -n "$OCI_SSH_KNOWN_HOSTS" ]; then
+            printf '%s\n' "$OCI_SSH_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          else
+            ssh-keyscan -H "$OCI_HOST" >> ~/.ssh/known_hosts
+          fi
+
+      - name: Upload artifact
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          ssh -i ~/.ssh/oci_vm "$OCI_USER@$OCI_HOST" \
+            "sudo mkdir -p '$OCI_ARTIFACT_DIR' && sudo chown -R '$OCI_USER:$OCI_USER' '$OCI_ARTIFACT_DIR'"
+
+          scp -i ~/.ssh/oci_vm ".deploy/$ARTIFACT_NAME" \
+            "$OCI_USER@$OCI_HOST:$OCI_ARTIFACT_DIR/$ARTIFACT_NAME"
+
+      - name: Deploy artifact
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          ssh -i ~/.ssh/oci_vm "$OCI_USER@$OCI_HOST" \
+            "sudo /opt/market-bot/bin/deploy-artifact.sh '$OCI_ARTIFACT_DIR/$ARTIFACT_NAME' '$RELEASE_ID'"

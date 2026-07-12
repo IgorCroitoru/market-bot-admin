@@ -1,0 +1,92 @@
+#cloud-config
+package_update: true
+packages:
+  - curl
+  - openssh-clients
+
+bootcmd:
+  - mkdir -p /opt/market-bot/env /opt/market-bot/bin /opt/market-bot/artifacts /opt/market-bot/releases
+
+write_files:
+  - path: /opt/market-bot/env/steam-bot.env
+    owner: root:root
+    permissions: "0600"
+    content: |
+%{ for key, value in steam_bot_env ~}
+      ${key}=${value}
+%{ endfor ~}
+  - path: /opt/market-bot/env/tm-client.env
+    owner: root:root
+    permissions: "0600"
+    content: |
+%{ for key, value in tm_client_env ~}
+      ${key}=${value}
+%{ endfor ~}
+  - path: /opt/market-bot/bin/deploy-artifact.sh
+    owner: root:root
+    permissions: "0755"
+    content: |
+      #!/usr/bin/env bash
+      set -euo pipefail
+
+      ARCHIVE_PATH="$${1:?Usage: deploy-artifact.sh <artifact.tar.gz> [release-id]}"
+      RELEASE_ID="$${2:-$$(date +%Y%m%d%H%M%S)}"
+      APP_ROOT="${app_root}"
+      RELEASES_DIR="/opt/market-bot/releases"
+      RELEASE_DIR="$${RELEASES_DIR}/$${RELEASE_ID}"
+
+      mkdir -p "$(dirname "$APP_ROOT")"
+      mkdir -p "$RELEASE_DIR"
+      tar -xzf "$ARCHIVE_PATH" -C "$RELEASE_DIR"
+
+      install -m 600 -o opc -g opc /opt/market-bot/env/steam-bot.env "$RELEASE_DIR/steam-bot/.env"
+      install -m 600 -o opc -g opc /opt/market-bot/env/tm-client.env "$RELEASE_DIR/tm-client/.env"
+
+      chown -R opc:opc "$RELEASE_DIR"
+      sudo -u opc npm ci --omit=dev --install-links --prefix "$RELEASE_DIR"
+
+      if [ -L "$APP_ROOT" ]; then
+        rm "$APP_ROOT"
+      elif [ -e "$APP_ROOT" ]; then
+        mv "$APP_ROOT" "$${APP_ROOT}.backup-$$(date +%Y%m%d%H%M%S)"
+      fi
+
+      ln -sfn "$RELEASE_DIR" "$APP_ROOT"
+
+      cat > /opt/market-bot/ecosystem.config.cjs <<EOF
+      module.exports = {
+        apps: [
+          {
+            name: "steam-bot",
+            cwd: "$APP_ROOT/steam-bot",
+            script: "npm",
+            args: "start",
+            autorestart: true
+          },
+          {
+            name: "tm-client",
+            cwd: "$APP_ROOT/tm-client",
+            script: "npm",
+            args: "start",
+            autorestart: true
+          }
+        ]
+      };
+      EOF
+      chown opc:opc /opt/market-bot/ecosystem.config.cjs
+
+      sudo -u opc pm2 startOrReload /opt/market-bot/ecosystem.config.cjs
+      sudo -u opc pm2 save
+
+      find "$RELEASES_DIR" -mindepth 1 -maxdepth 1 -type d -printf '%T@ %p\n' \
+        | sort -rn \
+        | tail -n +6 \
+        | cut -d' ' -f2- \
+        | xargs -r rm -rf
+
+runcmd:
+  - curl -fsSL https://rpm.nodesource.com/setup_${node_major_version}.x | bash -
+  - dnf install -y nodejs
+  - npm install -g pm2
+  - env PATH=$PATH:/usr/bin pm2 startup systemd -u opc --hp /home/opc
+  - systemctl enable pm2-opc
