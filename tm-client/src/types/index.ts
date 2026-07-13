@@ -1,5 +1,6 @@
 import type { AppLogger } from "@market-bot-admin/logging";
 import { ClientStatus } from "./schemas";
+import { Currency } from "@market-bot-admin/shared";
 
 /**
  * Market CSGO API Types
@@ -10,11 +11,7 @@ export enum ApiVersion {
   V2 = 'v2',
 }
 
-export enum Currency {
-  RUB = 'RUB',
-  USD = 'USD',
-  EUR = 'EUR',
-}
+
 
 export const HTTP_STATUS_CODES = {
   UNAUTHORIZED: 401,
@@ -76,10 +73,8 @@ export interface ClientOptions {
   maxBackoffMs?: number;
   pingIntervalMs?: number;
   marketTradePollIntervalMs?: number;
-  marketTradeEmptyPollIntervalMs?: number;
   marketTradeOfferTtlMs?: number;
   marketItemsPollIntervalMs?: number;
-  marketItemsEmptyPollIntervalMs?: number;
   logger?: AppLogger;
 }
 
@@ -314,7 +309,7 @@ export interface ItemInfo {
   market_hash_name: string;
   position: number;
   price: number;
-  currency: string;
+  currency: Currency;
   source: string;
   status: string;
   live_time: number;
@@ -325,6 +320,27 @@ export interface ItemInfo {
 
 export interface ItemsResponse extends ApiBaseResponse {
   items: ItemInfo[];
+}
+
+export interface MarketSearchItem {
+  id: number;
+  market_hash_name: string;
+  price: number;
+  class: number;
+  instance: number;
+  seller_steam_level: number | null;
+  source?: string;
+  extra?: {
+    float?: string;
+    phase?: string;
+    seller_steam_level?: number | null;
+    stickers?: string | null;
+  };
+}
+
+export interface SearchItemByHashNameSpecificResponse extends ApiBaseResponse {
+  currency: Currency;
+  data: MarketSearchItem[];
 }
 
 export type OfferGiveP2P = {

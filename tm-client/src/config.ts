@@ -22,7 +22,6 @@ const envSchema = z.object({
   MARKET_TRADE_EMPTY_POLL_INTERVAL_MS: numberFromEnv(30000),
   MARKET_TRADE_OFFER_TTL_MS: numberFromEnv(5 * 60_000),
   MARKET_ITEMS_POLL_INTERVAL_MS: numberFromEnv(5 * 60_000),
-  MARKET_ITEMS_EMPTY_POLL_INTERVAL_MS: numberFromEnv(30 * 60_000),
 });
 
 const azureQueueConfigSchema = z.object({
@@ -186,7 +185,6 @@ export function loadApiOptionsFromEnv(env: NodeJS.ProcessEnv = process.env): Cli
     marketTradeEmptyPollIntervalMs: config.MARKET_TRADE_EMPTY_POLL_INTERVAL_MS,
     marketTradeOfferTtlMs: config.MARKET_TRADE_OFFER_TTL_MS,
     marketItemsPollIntervalMs: config.MARKET_ITEMS_POLL_INTERVAL_MS,
-    marketItemsEmptyPollIntervalMs: config.MARKET_ITEMS_EMPTY_POLL_INTERVAL_MS,
     requestTimeoutMs: config.REQUEST_TIMEOUT_MS,
   }
 }

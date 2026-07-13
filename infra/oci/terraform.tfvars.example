@@ -72,7 +72,6 @@ tm_client_env = {
   MARKET_TRADE_EMPTY_POLL_INTERVAL_MS     = "30000"
   MARKET_TRADE_OFFER_TTL_MS               = "300000"
   MARKET_ITEMS_POLL_INTERVAL_MS           = "300000"
-  MARKET_ITEMS_EMPTY_POLL_INTERVAL_MS     = "1800000"
   BOT_INCOMING_TRADE_QUEUE_NAME           = "trade-requests"
   BOT_TRADE_STATUS_QUEUE_NAME             = "trade-status-update"
   PLATFORM_TRADE_READY_QUEUE_NAME         = "platform-trade-ready"

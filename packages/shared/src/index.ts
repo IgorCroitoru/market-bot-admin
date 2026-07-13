@@ -22,3 +22,9 @@ export interface User {
 export type OfferStatusChangedMessage = {
  
 }
+
+export enum Currency {
+  RUB = 'RUB',
+  USD = 'USD',
+  EUR = 'EUR',
+}

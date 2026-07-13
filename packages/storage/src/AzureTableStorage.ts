@@ -131,6 +131,24 @@ export class AzureTableJsonStorage
       throw error;
     }
   }
+
+  async listKeys(): Promise<string[]> {
+    await this.init();
+
+    const keys: string[] = [];
+    const entities = this.client.listEntities<JsonStorageEntity>({
+      queryOptions: {
+        filter: odata`PartitionKey eq ${this.partitionKey}`,
+        select: ["key"],
+      },
+    });
+
+    for await (const entity of entities) {
+      keys.push(entity.key);
+    }
+
+    return keys;
+  }
     // async saveData<T>(key: string, value: T): Promise<void> {
     //     await this.init();
 

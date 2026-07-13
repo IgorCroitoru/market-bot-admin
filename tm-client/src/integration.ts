@@ -22,9 +22,18 @@ import {
 import { logger } from "./logger";
 import { MarketClient } from "./MarketClient";
 import type { ClientOptions, ItemInfo, OfferGiveP2P, Trade } from "./types";
-import type { TradeOffer } from "./types/schemas";
+import type { MarketItemRecord, TradeOffer } from "./types/schemas";
 import { MarketItemsStorageService } from "./MarketItemsStorageService";
 import { TradeStorageService } from "./TradeStorageService";
+
+const MARKET_PRICE_STEP = 10; // Market represents USD/EUR as 1000 units per major currency unit.
+const MASS_SET_PRICE_LIMIT = 50;
+
+type MarketPriceAdjustment = {
+  record: MarketItemRecord;
+  price: number;
+  competingPrice: number;
+};
 
 type MarketP2POffer = OfferGiveP2P & {
   hash: string;
@@ -228,7 +237,7 @@ class MarketBotIntegration {
   }
 
   private async pollMarketItemsAndScheduleNext(): Promise<void> {
-    let nextDelayMs = this.options.marketItemsEmptyPollIntervalMs ?? 30 * 60_000;
+    let nextDelayMs = this.options.marketItemsPollIntervalMs ?? 5 * 60_000;
 
     try {
       nextDelayMs = await this.pollMarketItems();
@@ -254,7 +263,7 @@ class MarketBotIntegration {
 
       if (!response.success) {
         this.logger.warn({ response }, "Market items poll was not successful");
-        return this.options.marketItemsEmptyPollIntervalMs ?? 30 * 60_000;
+        return this.options.marketItemsPollIntervalMs ?? 5 * 60_000;
       }
 
       const items = Array.isArray(response.items)
@@ -267,6 +276,28 @@ class MarketBotIntegration {
         await this.marketItemsService.saveMarketItem(item, polledAt);
       }
 
+      const deletedItemCount = await this.marketItemsService.deleteItemsMissingFrom(
+        new Set(items.map((item) => item.item_id))
+      );
+
+      const priceAdjustments: MarketPriceAdjustment[] = [];
+
+      for (const item of onSaleItems) {
+        try {
+          const adjustment = await this.getMarketItemPriceAdjustment(item);
+          if (adjustment) {
+            priceAdjustments.push(adjustment);
+          }
+        } catch (error) {
+          this.logger.error(
+            { err: error, itemId: item.item_id, marketHashName: item.market_hash_name },
+            "Market item price adjustment failed"
+          );
+        }
+      }
+
+      await this.applyMarketItemPriceAdjustments(priceAdjustments);
+
       await this.marketItemsService.saveSnapshot({
         itemCount: items.length,
         onSaleCount: onSaleItems.length,
@@ -277,15 +308,141 @@ class MarketBotIntegration {
         {
           itemCount: items.length,
           onSaleCount: onSaleItems.length,
+          deletedItemCount,
         },
         "Market items saved to table storage"
       );
 
-      return onSaleItems.length > 0
-        ? this.options.marketItemsPollIntervalMs ?? 5 * 60_000
-        : this.options.marketItemsEmptyPollIntervalMs ?? 30 * 60_000;
+      return this.options.marketItemsPollIntervalMs ?? 5 * 60_000;
     } finally {
       this.marketItemsPollInFlight = false;
+    }
+  }
+
+  private async getMarketItemPriceAdjustment(item: ItemInfo): Promise<MarketPriceAdjustment | null> {
+    const record = await this.marketItemsService.getMarketItem(item.item_id);
+
+    if (!record || record.fixedPrice) {
+      return null;
+    }
+
+    const response = await this.client.searchItemByHashNameSpecific(item.market_hash_name, {
+      lang: "en",
+      withStickers: false,
+      withAlfaskins: false,
+    });
+
+    if (!response.success || !Array.isArray(response.data)) {
+      this.logger.warn(
+        { itemId: item.item_id, response },
+        "Market listing search was not successful"
+      );
+      return null;
+    }
+
+    if (response.currency !== record.currency) {
+      this.logger.warn(
+        { itemId: item.item_id, itemCurrency: record.currency, searchCurrency: response.currency },
+        "Skipping price adjustment because listing currencies differ"
+      );
+      return null;
+    }
+
+    const lowestCompetingPrice = response.data
+      .filter((listing) => String(listing.id) !== String(item.item_id))
+      .reduce<number | null>(
+        (lowest, listing) => lowest === null || listing.price < lowest ? listing.price : lowest,
+        null
+      );
+
+    if (lowestCompetingPrice === null || lowestCompetingPrice >= record.price) {
+      return null;
+    }
+
+    const minPrice = record.minPrice ?? record.price;
+    const adjustedPrice = Math.max(minPrice, lowestCompetingPrice - MARKET_PRICE_STEP);
+
+    if (adjustedPrice >= record.price) {
+      return null;
+    }
+
+    return {
+      record,
+      price: adjustedPrice,
+      competingPrice: lowestCompetingPrice,
+    };
+  }
+
+  private async applyMarketItemPriceAdjustments(
+    adjustments: MarketPriceAdjustment[]
+  ): Promise<void> {
+    const adjustmentsByCurrency = new Map<MarketItemRecord["currency"], MarketPriceAdjustment[]>();
+
+    for (const adjustment of adjustments) {
+      const currencyAdjustments = adjustmentsByCurrency.get(adjustment.record.currency) ?? [];
+      currencyAdjustments.push(adjustment);
+      adjustmentsByCurrency.set(adjustment.record.currency, currencyAdjustments);
+    }
+
+    for (const [currency, currencyAdjustments] of adjustmentsByCurrency) {
+      for (let offset = 0; offset < currencyAdjustments.length; offset += MASS_SET_PRICE_LIMIT) {
+        const batch = currencyAdjustments.slice(offset, offset + MASS_SET_PRICE_LIMIT);
+
+        try {
+          const response = await this.client.massSetPrice(
+            batch.map(({ record, price }) => ({
+              item_id: Number(record.id),
+              price,
+            })),
+            currency
+          );
+
+          if (!response.success || !Array.isArray(response.items)) {
+            this.logger.warn(
+              { currency, itemCount: batch.length, response },
+              "Market rejected mass item price adjustment"
+            );
+            continue;
+          }
+
+          const adjustedAt = new Date().toISOString();
+          const successfulItems = new Set(
+            response.items.filter((item) => item.success).map((item) => String(item.item_id))
+          );
+
+          for (const adjustment of batch) {
+            if (!successfulItems.has(String(adjustment.record.id))) {
+              this.logger.warn(
+                { itemId: adjustment.record.id, response: response.items },
+                "Market did not apply item price adjustment"
+              );
+              continue;
+            }
+
+            await this.marketItemsService.updateMarketItemPrice(
+              adjustment.record,
+              adjustment.price,
+              adjustedAt
+            );
+            this.logger.info(
+              {
+                itemId: adjustment.record.id,
+                previousPrice: adjustment.record.price,
+                competingPrice: adjustment.competingPrice,
+                adjustedPrice: adjustment.price,
+                minPrice: adjustment.record.minPrice,
+                currency,
+              },
+              "Market item price adjusted"
+            );
+          }
+        } catch (error) {
+          this.logger.error(
+            { err: error, currency, itemIds: batch.map(({ record }) => record.id) },
+            "Market mass item price adjustment failed"
+          );
+        }
+      }
     }
   }
 

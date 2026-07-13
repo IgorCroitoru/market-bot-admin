@@ -1,3 +1,4 @@
+import { Currency } from "@market-bot-admin/shared";
 import { ItemInfo, OfferGiveP2P, Trade } from ".";
 
 export interface TradeOffer {
@@ -48,6 +49,10 @@ export interface ClientStatus {
 export interface MarketItemRecord {
     id: string;
     item: ItemInfo;
+    minPrice?: number;
+    price: number;
+    currency: Currency;
+    fixedPrice: boolean
     status: "on-sale" | "sold-awaiting-transfer" | "awaiting-seller-transfer" | "ready-to-pick-up" | "unknown";
     statusCode: string;
     isOnSale: boolean;

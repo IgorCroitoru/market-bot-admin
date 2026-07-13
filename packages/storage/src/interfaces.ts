@@ -22,6 +22,8 @@ export interface KeyValueStore<TSchema extends Record<string, unknown> = Record<
 
 export interface EntityReader {
   get<TEntity>(key: string): Promise<TEntity | null>;
+
+  listKeys(): Promise<string[]>;
 }
 
 export interface EntityStore

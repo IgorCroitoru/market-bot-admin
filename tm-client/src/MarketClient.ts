@@ -13,9 +13,11 @@ import {
   TradeRequestGiveP2PAllResponse,
   RetryConfig,
   RateLimiterConfig,
-  Currency,
   ItemsResponse,
+  MassSetPriceResponse,
+  SearchItemByHashNameSpecificResponse,
 } from './types';
+import { Currency } from '@market-bot-admin/shared';
 
 /**
  * Market CSGO API Client
@@ -339,10 +341,17 @@ export class MarketClient {
    * Set a new price on multiple items
    * [POST] https://market.csgo.com/api/v2/mass-set-price?key=[your_secret_key]&cur=[currency]
    */
-  async massSetPrice(items: Array<{ item_id: number; price: number }>, cur: Currency = Currency.USD): Promise<any> {
+  async massSetPrice(
+    items: Array<{ item_id: number; price: number }>,
+    cur: Currency = Currency.USD
+  ): Promise<MassSetPriceResponse> {
+    if (items.length > 50) {
+      throw new Error('mass-set-price accepts a maximum of 50 items per request');
+    }
+
     return this.executeWithRetry(async () => {
       const url = `/${this.version}/mass-set-price?${this.buildQueryString({ cur })}`;
-      const response = await this.axiosInstance.post<any>(url, { items });
+      const response = await this.axiosInstance.post<MassSetPriceResponse>(url, { items });
       return response.data;
     });
   }
@@ -408,6 +417,30 @@ export class MarketClient {
     return this.executeWithRetry(async () => {
       const url = `/${this.version}/items?${this.buildQueryString()}`;
       const response = await this.axiosInstance.get<any>(url);
+      return response.data;
+    });
+  }
+
+  /**
+   * Search current listings by exact market hash name.
+   * https://market.csgo.com/api/v2/search-item-by-hash-name-specific
+   */
+  async searchItemByHashNameSpecific(
+    marketHashName: string,
+    options: {
+      withStickers?: boolean;
+      lang?: 'ru' | 'en';
+      withAlfaskins?: false;
+    } = {}
+  ): Promise<SearchItemByHashNameSpecificResponse> {
+    return this.executeWithRetry(async () => {
+      const url = `/${this.version}/search-item-by-hash-name-specific?${this.buildQueryString({
+        hash_name: marketHashName,
+        with_stickers: options.withStickers ? 1 : 0,
+        lang: options.lang ?? 'en',
+        with_alfaskins: options.withAlfaskins ? 1 : 0,
+      })}`;
+      const response = await this.axiosInstance.get<SearchItemByHashNameSpecificResponse>(url);
       return response.data;
     });
   }

@@ -18,6 +18,10 @@ export class MarketItemsStorageService {
       firstSeenAt: existingRecord?.firstSeenAt ?? polledAt,
       lastSeenAt: polledAt,
       lastPollAt: polledAt,
+      price: item.price,
+      currency : item.currency,
+      fixedPrice: existingRecord?.fixedPrice ?? false,
+      minPrice: existingRecord?.minPrice?? item.price,
       data: {
         previousStatusCode: existingRecord?.statusCode,
         previousPrice: existingRecord?.item.price,
@@ -34,8 +38,38 @@ export class MarketItemsStorageService {
     });
   }
 
+  async deleteItemsMissingFrom(currentItemIds: Set<string>): Promise<number> {
+    const storedItemIds = (await this.storage.listKeys())
+      .filter((key) => key !== SNAPSHOT_ROW_KEY);
+    const missingItemIds = storedItemIds
+      .filter((itemId) => !currentItemIds.has(itemId));
+
+    for (const itemId of missingItemIds) {
+      await this.storage.delete(itemId);
+    }
+
+    return missingItemIds.length;
+  }
+
   async getMarketItem(itemId: string): Promise<MarketItemRecord | null> {
     return this.storage.get<MarketItemRecord>(itemId);
+  }
+
+  async updateMarketItemPrice(record: MarketItemRecord, price: number, updatedAt: string): Promise<void> {
+    await this.storage.set(record.id, {
+      ...record,
+      item: {
+        ...record.item,
+        price,
+      },
+      price,
+      lastSeenAt: updatedAt,
+      data: {
+        ...record.data,
+        previousPrice: record.price,
+        priceAdjustedAt: updatedAt,
+      },
+    });
   }
 }
 
