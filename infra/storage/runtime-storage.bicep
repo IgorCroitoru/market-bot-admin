@@ -27,8 +27,14 @@ param blobContainerName string
 @description('Your id to be able to contribute to queue in portal.')
 param developerObjectId string
 
-param runtimeIdentityPrincipalId string
-param runtimeIdentityId string
+@description('ACA runtime identity principal ID. Empty when the runtime is hosted outside Azure.')
+param runtimeIdentityPrincipalId string = ''
+
+@description('ACA runtime identity resource ID. Empty when the runtime is hosted outside Azure.')
+param runtimeIdentityId string = ''
+
+@description('Enable account keys for non-Azure runtimes such as OCI.')
+param allowSharedKeyAccess bool = false
 
 @description('Tags.')
 param tags object = {
@@ -57,7 +63,7 @@ resource storageAccount 'Microsoft.Storage/storageAccounts@2024-01-01' = {
 
     // Since your code uses DefaultAzureCredential, shared keys are not needed.
     // If you still want to use connectionString locally, set this to true.
-    allowSharedKeyAccess: false
+    allowSharedKeyAccess: allowSharedKeyAccess
 
     publicNetworkAccess: 'Enabled'
     networkAcls: {
@@ -91,7 +97,7 @@ resource blobContainer 'Microsoft.Storage/storageAccounts/blobServices/container
 }
 
 // ACA runtime identity can read blob data.
-resource runtimeStorageBlobDataContributor 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+resource runtimeStorageBlobDataContributor 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (!empty(runtimeIdentityPrincipalId)) {
   name: guid(storageAccount.id, runtimeIdentityId, storageBlobDataContributorRoleId)
   scope: storageAccount
   properties: {
@@ -155,7 +161,7 @@ resource marketItemsTable 'Microsoft.Storage/storageAccounts/tableServices/table
 }
 
 // Runtime identity contributor
-resource queueDataContributorAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+resource queueDataContributorAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (!empty(runtimeIdentityPrincipalId)) {
   name: guid(storageAccount.id, runtimeIdentityPrincipalId, storageQueueContributorRoleId)
   scope: storageAccount
   properties: {
@@ -183,7 +189,7 @@ resource queueDataUserContributorAssignment 'Microsoft.Authorization/roleAssignm
   }
 }
 
-resource tableDataContributorAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+resource tableDataContributorAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (!empty(runtimeIdentityPrincipalId)) {
   name: guid(storageAccount.id, runtimeIdentityPrincipalId, storageTableDataContributorRoleId)
   scope: storageAccount
   properties: {

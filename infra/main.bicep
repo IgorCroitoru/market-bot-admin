@@ -12,6 +12,11 @@ param developerPermissionToWriteKv bool = false
 @description('Project/application name used in tags and resource names.')
 param projectName string = 'cs-tm-bot'
 
+@description('Short string or number prefixed to all generated resource names.')
+@minLength(1)
+@maxLength(5)
+param namingPrefix string
+
 @description('Environment name: dev, test, or prod.')
 @allowed([
   'dev'
@@ -31,6 +36,13 @@ param tags object = {}
 
 @description('Deploy local-development storage, queue, table, and Key Vault resources.')
 param deployLocalDev bool = false
+
+@description('Runtime hosting target. Azure deploys ACA/ACR and their identities; OCI keeps those Azure hosting resources disabled.')
+@allowed([
+  'azure'
+  'oci'
+])
+param deploymentTarget string = 'oci'
 
 @description('Your Microsoft Entra user object ID for local development. Required when deployLocalDev is true.')
 param developerObjectId string = ''
@@ -127,6 +139,7 @@ param botQueueMaxDequeueCount string = '5'
 module naming './shared/naming.bicep' = {
   name: 'shared-naming'
   params: {
+    prefix: namingPrefix
     projectName: projectName
     environment: environmentName
   }
@@ -151,6 +164,8 @@ var commonTags = union(tags, {
   managedBy: 'bicep'
 })
 
+var deployAzureHosting = deploymentTarget == 'azure'
+
 var localDevTags = union(commonTags, {
   environment: 'local-${environmentName}'
 })
@@ -166,28 +181,62 @@ var staticWebAppSettings = {
   }
 }
 
-module acr './acr/main.bicep' = {
-  name: 'acr-stack-${environmentName}'
+var azureHostingSettings = {
+  projectName: projectName
+  environmentName: environmentName
+  locations: effectiveResourceLocations
+  names: {
+    acr: resourceNames.acr.name
+    pipelineIdentity: resourceNames.pipelineIdentity.name
+    runtimeIdentity: resourceNames.runtimeIdentity.name
+    runtimeKeyVault: resourceNames.runtimeKeyVault.name
+    logAnalytics: resourceNames.logAnalytics.name
+    containerAppsEnvironment: resourceNames.containerAppsEnvironment.name
+    containerApp: resourceNames.aca.name
+    runtimeStorage: resourceNames.runtimeStorage.name
+    blobContainer: resourceNames.blobContainer.name
+  }
+  acrSku: acrSku
+  acrPublicNetworkAccess: acrPublicNetworkAccess
+  github: {
+    owner: githubOwner
+    repo: githubRepo
+    branch: githubBranch
+    environment: githubEnvironment
+  }
+  container: {
+    imageRepository: imageRepository
+    initialImageTag: initialImageTag
+    useAcrImageOnFirstDeploy: useAcrImageOnFirstDeploy
+    bootstrapImage: bootstrapImage
+    botEnv: botEnv
+    ingressEnabled: ingressEnabled
+    externalIngress: externalIngress
+    targetPort: targetPort
+  }
+  storage: {
+    tradesStatusVisibilityTimeoutSeconds: tradesStatusVisibilityTimeoutSeconds
+    botTradeQueueName: botTradeQueueName
+    botTradeStatusQueueName: botTradeStatusQueueName
+    botQueueCreateIfNotExists: botQueueCreateIfNotExists
+    botQueueMaxDequeueCount: botQueueMaxDequeueCount
+    botQueueMaxMessages: botQueueMaxMessages
+  }
+  developerObjectId: developerObjectId
+  developerPermissionToWriteKv: developerPermissionToWriteKv
+  tags: commonTags
+}
+
+module azureHosting './azure-hosting/main.bicep' = if (deployAzureHosting) {
+  name: 'azure-hosting-${environmentName}'
   params: {
-    location: effectiveResourceLocations.acr
-    projectName: projectName
-    environmentName: environmentName
-    acrName: resourceNames.acr.name
-    acrSku: acrSku
-    acrPublicNetworkAccess: acrPublicNetworkAccess
-    pipelineIdentityName: resourceNames.pipelineIdentity.name
-    githubOwner: githubOwner
-    githubRepo: githubRepo
-    githubBranch: githubBranch
-    githubEnvironment: githubEnvironment
-    tags: commonTags
+    settings: azureHostingSettings
   }
 }
 
 module staticApp './static-web-app/static-app.bicep' = {
   name: 'static-web-app-${environmentName}'
   dependsOn: [
-    aca
     localDev
   ]
   params: {
@@ -212,67 +261,45 @@ module localDev './local-dev/main.bicep' = if (deployLocalDev) {
   }
 }
 
-module aca './aca/main.bicep' = {
-  name: 'aca-stack-${environmentName}'
+module runtimeStorage './storage/runtime-storage.bicep' = {
+  name: 'runtime-storage-${environmentName}'
   params: {
-    locations: {
-      runtimeIdentity: effectiveResourceLocations.runtimeIdentity
-      runtimeKeyVault: effectiveResourceLocations.runtimeKeyVault
-      logAnalytics: effectiveResourceLocations.logAnalytics
-      containerAppsEnvironment: effectiveResourceLocations.containerAppsEnvironment
-      containerApp: effectiveResourceLocations.containerApp
-      runtimeStorage: effectiveResourceLocations.runtimeStorage
-    }
+    location: effectiveResourceLocations.runtimeStorage
     tradeTableName: tradeTableName
     marketItemsTableName: marketItemsTableName
-    tradesStatusVisibilityTimeoutSeconds: tradesStatusVisibilityTimeoutSeconds
-    botTradeQueueName:  botTradeQueueName
+    botTradeQueueName: botTradeQueueName
     botTradeStatusQueueName: botTradeStatusQueueName
     platformTradeReadyQueueName: platformTradeReadyQueueName
-    botQueueCreateIfNotExists: botQueueCreateIfNotExists
-    botQueueMaxDequeueCount: botQueueMaxDequeueCount
-    botQueueMaxMessages: botQueueMaxMessages
     developerObjectId: developerObjectId
-    developerPermissionToWriteKv: developerPermissionToWriteKv
-    runtimeIdentityName: resourceNames.runtimeIdentity.name
-    keyVaultName: resourceNames.runtimeKeyVault.name
-    logAnalyticsWorkspaceName: resourceNames.logAnalytics.name
-    containerAppsEnvironmentName: resourceNames.containerAppsEnvironment.name
-    containerAppName: resourceNames.aca.name
-    imageRepository: imageRepository
-    initialImageTag: initialImageTag
-    useAcrImageOnFirstDeploy: useAcrImageOnFirstDeploy
-    bootstrapImage: bootstrapImage
-    botEnv: botEnv
-    ingressEnabled: ingressEnabled
-    externalIngress: externalIngress
-    targetPort: targetPort
-    commonTags: commonTags
-    acrName: acr.outputs.acrName
-    pipelineIdentityName: resourceNames.pipelineIdentity.name
-    blobContainerName: resourceNames.blobContainer.name
     storageAccountName: resourceNames.runtimeStorage.name
+    blobContainerName: resourceNames.blobContainer.name
+    tags: commonTags
+    runtimeIdentityId: deployAzureHosting ? azureHosting!.outputs.runtimeIdentityId : ''
+    runtimeIdentityPrincipalId: deployAzureHosting ? azureHosting!.outputs.runtimeIdentityPrincipalId : ''
+    allowSharedKeyAccess: !deployAzureHosting
   }
 }
 
-output acrName string = acr.outputs.acrName
-output acrId string = acr.outputs.acrId
-output acrLoginServer string = acr.outputs.acrLoginServer
+output deploymentTarget string = deploymentTarget
+output deployAzureHosting bool = deployAzureHosting
+output acrName string = deployAzureHosting ? azureHosting!.outputs.acrName : ''
+output acrId string = deployAzureHosting ? azureHosting!.outputs.acrId : ''
+output acrLoginServer string = deployAzureHosting ? azureHosting!.outputs.acrLoginServer : ''
 
-output githubActionsClientId string = acr.outputs.githubActionsClientId
-output githubActionsPrincipalId string = acr.outputs.githubActionsPrincipalId
-output githubActionsFederatedSubject string = acr.outputs.githubActionsFederatedSubject
+output githubActionsClientId string = deployAzureHosting ? azureHosting!.outputs.githubActionsClientId : ''
+output githubActionsPrincipalId string = deployAzureHosting ? azureHosting!.outputs.githubActionsPrincipalId : ''
+output githubActionsFederatedSubject string = deployAzureHosting ? azureHosting!.outputs.githubActionsFederatedSubject : ''
 
 output staticWebAppName string = staticApp.outputs.staticWebAppName
 output staticWebAppDefaultHostname string = staticApp.outputs.defaultHostname
 
-output runtimeIdentityId string = aca.outputs.runtimeIdentityId
-output runtimeIdentityClientId string = aca.outputs.runtimeIdentityClientId
-output runtimeIdentityPrincipalId string = aca.outputs.runtimeIdentityPrincipalId
-output runtimeKeyVaultName string = aca.outputs.keyVaultName
-output runtimeKeyVaultUri string = aca.outputs.keyVaultUri
-output containerAppName string = aca.outputs.containerAppName
-output containerAppsEnvironmentName string = aca.outputs.containerAppsEnvironmentName
+output runtimeIdentityId string = deployAzureHosting ? azureHosting!.outputs.runtimeIdentityId : ''
+output runtimeIdentityClientId string = deployAzureHosting ? azureHosting!.outputs.runtimeIdentityClientId : ''
+output runtimeIdentityPrincipalId string = deployAzureHosting ? azureHosting!.outputs.runtimeIdentityPrincipalId : ''
+output runtimeKeyVaultName string = deployAzureHosting ? azureHosting!.outputs.runtimeKeyVaultName : ''
+output runtimeKeyVaultUri string = deployAzureHosting ? azureHosting!.outputs.runtimeKeyVaultUri : ''
+output containerAppName string = deployAzureHosting ? azureHosting!.outputs.containerAppName : ''
+output containerAppsEnvironmentName string = deployAzureHosting ? azureHosting!.outputs.containerAppsEnvironmentName : ''
 
 output runtimeStorageAccountName string = resourceNames.runtimeStorage.name
 output localStorageAccountName string = deployLocalDev ? resourceNames.localStorage.name : ''

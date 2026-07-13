@@ -1,54 +1,56 @@
+param prefix string
 param projectName string
 param environment string
 
+var compactPrefix = toLower(replace(prefix, '-', ''))
 var compactProjectName = toLower(replace(projectName, '-', ''))
 
 output resources object = {
   acr: {
-    name: 'acr${compactProjectName}${environment}'
+    name: 'acr${compactPrefix}${compactProjectName}${environment}'
   }
 
   runtimeIdentity: {
-    name: 'id-${projectName}-${environment}-runtime'
+    name: 'id-${prefix}-${projectName}-${environment}-runtime'
   }
 
   pipelineIdentity: {
-    name: 'id-${projectName}-${environment}-github-acrpush'
+    name: 'id-${prefix}-${projectName}-${environment}-github-acrpush'
   }
 
   runtimeKeyVault: {
-    name: 'kv-${projectName}-${environment}'
+    name: 'kv-${prefix}-${projectName}-${environment}'
   }
 
   logAnalytics: {
-    name: 'log-${projectName}-${environment}'
+    name: 'log-${prefix}-${projectName}-${environment}'
   }
 
   containerAppsEnvironment: {
-    name: 'cae-${projectName}-${environment}'
+    name: 'cae-${prefix}-${projectName}-${environment}'
   }
 
   aca: {
-    name: 'ca-${projectName}-${environment}'
+    name: 'ca-${prefix}-${projectName}-${environment}'
   }
 
   runtimeStorage: {
-    name: 'st${compactProjectName}${environment}'
+    name: 'st${compactPrefix}${compactProjectName}${environment}'
   }
 
   localStorage: {
-    name: 'st${compactProjectName}local${environment}'
+    name: 'st${compactPrefix}${compactProjectName}local${environment}'
   }
 
   localKeyVault: {
-    name: 'kv-${projectName}-local-${environment}'
+    name: 'kv-${prefix}-${projectName}-local-${environment}'
   }
 
   staticWebApp: {
-    name: '${projectName}-${environment}'
+    name: '${prefix}-${projectName}-${environment}'
   }
 
   blobContainer: {
-    name: projectName
+    name: '${prefix}-${projectName}'
   }
 }

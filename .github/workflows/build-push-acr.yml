@@ -1,9 +1,9 @@
 name: Build and push image to ACR
 
 on:
-  push:
-    branches:
-      - main
+  # push:
+  #   branches:
+  #     - main
   workflow_dispatch:
 
 permissions:

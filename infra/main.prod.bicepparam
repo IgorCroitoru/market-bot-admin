@@ -12,9 +12,13 @@ param resourceLocations = {
 }
 
 param projectName = 'cs-tm-bot'
+param namingPrefix = '1'
 param environmentName = 'prod'
+param deploymentTarget = 'oci'
 
 param deployLocalDev = false
+param tradeTableName = 'Trades'
+param marketItemsTableName = 'MarketItems'
 param botTradeQueueName = 'trade-requests'
 param botTradeStatusQueueName = 'trade-status-update'
 param platformTradeReadyQueueName = 'platform-trade-ready'

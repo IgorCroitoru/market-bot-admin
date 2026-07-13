@@ -53,26 +53,17 @@ param acrName string
 @description('Github pipeline identity name. This identity will be granted permissions to push to ACR and optionally manage Container App.')
 param pipelineIdentityName string
 
-@description('Blob container name used by the bot. This container will be created in the storage account and used by AzureBotStorage.')
+@description('Blob container name used by the bot.')
 param blobContainerName string
 
 @description('Bot storage name')
 param storageAccountName string
-
-@description('Trade table name used by tm-client.')
-param tradeTableName string
-
-@description('Market items table name used by tm-client.')
-param marketItemsTableName string
 
 @description('Name of the queue for incoming trades requests.')
 param botTradeQueueName string
 
 @description('Name of the queue for outgoing trade statuses updates.')
 param botTradeStatusQueueName string
-
-@description('Queue name for Market trade-ready registration tasks.')
-param platformTradeReadyQueueName string = 'platform-trade-ready'
 
 @description('Create azure queue if not exists.')
 param botQueueCreateIfNotExists string
@@ -210,27 +201,6 @@ module pipelineCanUpdateContainerApp './aca-role-assignment.bicep' = {
     containerAppName: containerAppName
     principalId: githubIdentity.properties.principalId
     principalType: 'ServicePrincipal'
-  }
-}
-
-module botStorage './bot-storage.bicep' = {
-  name: 'bs-${uniqueString(resourceGroup().id, containerAppName)}'
-  dependsOn: [
-    containerApp
-  ]
-  params: {
-    tradeTableName: tradeTableName
-    marketItemsTableName: marketItemsTableName
-    botTradeQueueName: botTradeQueueName
-    botTradeStatusQueueName: botTradeStatusQueueName
-    platformTradeReadyQueueName: platformTradeReadyQueueName
-    developerObjectId: developerObjectId
-    storageAccountName: storageAccountName
-    blobContainerName: blobContainerName
-    location: locations.runtimeStorage
-    tags: commonTags
-    runtimeIdentityId: runtimeIdentity.outputs.id
-    runtimeIdentityPrincipalId: runtimeIdentity.outputs.principalId
   }
 }
 

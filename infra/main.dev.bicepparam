@@ -12,7 +12,9 @@ param resourceLocations = {
 }
 
 param projectName = 'cs-tm-bot'
+param namingPrefix = '1'
 param environmentName = 'dev'
+param deploymentTarget = 'oci'
 
 
 param developerPermissionToWriteKv = true
