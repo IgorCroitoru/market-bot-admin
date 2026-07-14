@@ -19,7 +19,6 @@ const envSchema = z.object({
   REQUESTS_PER_SECOND: numberFromEnv(5),
   PING_INTERVAL_MS: numberFromEnv(180000), // 3 minutes
   MARKET_TRADE_POLL_INTERVAL_MS: numberFromEnv(15000),
-  MARKET_TRADE_EMPTY_POLL_INTERVAL_MS: numberFromEnv(30000),
   MARKET_TRADE_OFFER_TTL_MS: numberFromEnv(5 * 60_000),
   MARKET_ITEMS_POLL_INTERVAL_MS: numberFromEnv(5 * 60_000),
 });
@@ -182,7 +181,6 @@ export function loadApiOptionsFromEnv(env: NodeJS.ProcessEnv = process.env): Cli
     maxBackoffMs: config.MAX_BACKOFF_MS,
     pingIntervalMs: config.PING_INTERVAL_MS,
     marketTradePollIntervalMs: config.MARKET_TRADE_POLL_INTERVAL_MS,
-    marketTradeEmptyPollIntervalMs: config.MARKET_TRADE_EMPTY_POLL_INTERVAL_MS,
     marketTradeOfferTtlMs: config.MARKET_TRADE_OFFER_TTL_MS,
     marketItemsPollIntervalMs: config.MARKET_ITEMS_POLL_INTERVAL_MS,
     requestTimeoutMs: config.REQUEST_TIMEOUT_MS,
