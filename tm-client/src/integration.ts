@@ -201,14 +201,6 @@ class MarketBotIntegration {
         }
       }
 
-      this.logger.info(
-        {
-          tradeCount: activeTrades.length,
-          p2pOfferCount: p2pResponse.offers.length,
-        },
-        "Market trades found; matching P2P details by secret"
-      );
-
       for (const trade of activeTrades) {
         const offer = offersBySecret.get(trade.secret);
 
