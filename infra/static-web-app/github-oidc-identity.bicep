@@ -77,6 +77,29 @@ resource storageKeyRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-
 }
 
 /*
+Reader is also required because `az storage account show-connection-string`
+reads the storage account metadata before listing its keys.
+*/
+var readerRoleId = subscriptionResourceId(
+  'Microsoft.Authorization/roleDefinitions',
+  'acdd72a7-3385-48ef-bd42-f606fba81ae7'
+)
+
+resource storageReaderRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+  name: guid(
+    storageAccount.id,
+    githubIdentity.id,
+    readerRoleId
+  )
+  scope: storageAccount
+  properties: {
+    principalId: githubIdentity.properties.principalId
+    principalType: 'ServicePrincipal'
+    roleDefinitionId: readerRoleId
+  }
+}
+
+/*
 Contributor role, but scoped only to this Static Web App.
 
 This permits the workflow to update SWA API application settings.
