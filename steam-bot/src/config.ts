@@ -42,7 +42,7 @@ const queueEnvSchema = z.object({
   BOT_QUEUE_ENABLED: optionalBooleanFromEnv(),
   BOT_INCOMING_TRADE_QUEUE_NAME: optionalTrimmedString(),
   BOT_TRADE_STATUS_QUEUE_NAME: optionalTrimmedString(),
-  AZURE_QUEUE_CONNECTION_STRING: optionalTrimmedString(),
+  AZURE_CONNECTION_STRING: optionalTrimmedString(),
   AZURE_QUEUE_ACCOUNT_NAME: optionalTrimmedString(),
   AZURE_STORAGE_ACCOUNT_NAME: optionalTrimmedString(),
   BOT_QUEUE_CREATE_IF_NOT_EXISTS: booleanFromEnv(false),
@@ -125,14 +125,14 @@ export function loadTaskControllerOptionsFromEnv(
 
 function createAzureQueueConfig(config: BotQueueRuntimeConfig): Omit<AzureQueueConfig, "queueName"> {
   const storageAccountName = config.AZURE_QUEUE_ACCOUNT_NAME ?? config.AZURE_STORAGE_ACCOUNT_NAME;
-  if (!config.AZURE_QUEUE_CONNECTION_STRING && !storageAccountName) {
+  if (!config.AZURE_CONNECTION_STRING && !storageAccountName) {
     throw new Error(
-      "Azure queue config requires AZURE_QUEUE_CONNECTION_STRING, AZURE_QUEUE_ACCOUNT_NAME, or AZURE_STORAGE_ACCOUNT_NAME."
+      "Azure queue config requires AZURE_CONNECTION_STRING, AZURE_QUEUE_ACCOUNT_NAME, or AZURE_STORAGE_ACCOUNT_NAME."
     );
   }
 
   return {
-    connectionString: config.AZURE_QUEUE_CONNECTION_STRING,
+    connectionString: config.AZURE_CONNECTION_STRING,
     storageAccountName,
     createIfNotExists: config.BOT_QUEUE_CREATE_IF_NOT_EXISTS
   };

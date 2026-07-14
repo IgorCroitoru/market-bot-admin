@@ -11,13 +11,20 @@ export interface CreateStorageOptions {
 
 export function createBotStorageFromEnv(options: CreateStorageOptions): KeyValueStore<BotStorageItems> {
   const env = options.env ?? process.env;
-  const driver = (env.BOT_STORAGE_DRIVER ?? (env.BOT_ENV === "prod" ? "azure" : "local")) as StorageDriver;
+  const driver = (env.BOT_STORAGE_DRIVER ?? "azure") as StorageDriver;
 
   if (driver === "azure") {
+    const connectionString = env.AZURE_CONNECTION_STRING;
+    const storageAccountName = env.AZURE_STORAGE_ACCOUNT_NAME;
+    if (!connectionString && !storageAccountName) {
+      throw new Error("Azure blob storage requires AZURE_CONNECTION_STRING or AZURE_STORAGE_ACCOUNT_NAME.");
+    }
+
     return new AzureBlobStorage<BotStorageItems>({
       accountName: options.accountName,
       containerName: env.AZURE_BOT_CONTAINER_NAME ?? "steam-bot",
-      storageAccountName: required(env.AZURE_STORAGE_ACCOUNT_NAME, "AZURE_STORAGE_ACCOUNT_NAME"),
+      connectionString,
+      storageAccountName,
     });
   }
 
@@ -28,11 +35,3 @@ export function createBotStorageFromEnv(options: CreateStorageOptions): KeyValue
 }
 
 export { AzureBlobStorage, LocalBotStorage };
-
-function required(value: string | undefined, name: string): string {
-  if (!value) {
-    throw new Error(`Missing required environment variable: ${name}`);
-  }
-
-  return value;
-}

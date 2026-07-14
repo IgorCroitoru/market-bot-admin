@@ -11,7 +11,7 @@ export type AzureQueueConfig = {
 
   /**
    * Use this for local/dev if you want.
-   * Example: AZURE_STORAGE_CONNECTION_STRING
+   * Example: AZURE_CONNECTION_STRING
    */
   connectionString?: string;
 

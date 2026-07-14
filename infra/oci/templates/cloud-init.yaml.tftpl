@@ -75,6 +75,12 @@ write_files:
       EOF
       chown opc:opc /opt/market-bot/ecosystem.config.cjs
 
+      if ! sudo -u opc pm2 describe pm2-logrotate >/dev/null 2>&1; then
+        sudo -u opc pm2 install pm2-logrotate
+      fi
+      sudo -u opc pm2 set pm2-logrotate:max_size 10M
+      sudo -u opc pm2 set pm2-logrotate:retain 7
+
       sudo -u opc pm2 startOrReload /opt/market-bot/ecosystem.config.cjs
       sudo -u opc pm2 save
 
@@ -88,5 +94,8 @@ runcmd:
   - curl -fsSL https://rpm.nodesource.com/setup_${node_major_version}.x | bash -
   - dnf install -y nodejs
   - npm install -g pm2
+  - sudo -u opc pm2 install pm2-logrotate
+  - sudo -u opc pm2 set pm2-logrotate:max_size 10M
+  - sudo -u opc pm2 set pm2-logrotate:retain 7
   - env PATH=$PATH:/usr/bin pm2 startup systemd -u opc --hp /home/opc
   - systemctl enable pm2-opc

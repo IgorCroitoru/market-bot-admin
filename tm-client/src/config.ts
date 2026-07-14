@@ -24,7 +24,7 @@ const envSchema = z.object({
 });
 
 const azureQueueConfigSchema = z.object({
-  AZURE_QUEUE_CONNECTION_STRING: optionalTrimmedString(),
+  AZURE_CONNECTION_STRING: optionalTrimmedString(),
   AZURE_QUEUE_ACCOUNT_NAME: optionalTrimmedString(),
   AZURE_STORAGE_ACCOUNT_NAME: optionalTrimmedString(),
   AZURE_QUEUE_CREATE_IF_NOT_EXISTS: booleanFromEnv(false),
@@ -38,14 +38,15 @@ const azureQueueConfigSchema = z.object({
 
 const azureBlobStorageConfigSchema = z.object({
   ACCOUNT_NAME: z.string(),
-  AZURE_STORAGE_ACCOUNT_NAME: z.string(),
+  AZURE_CONNECTION_STRING: optionalTrimmedString(),
+  AZURE_STORAGE_ACCOUNT_NAME: optionalTrimmedString(),
   AZURE_BLOB_CONTAINER_NAME: z.string()
 });
 
 const azureTableStorageConfigSchema = z
   .object({
     AZURE_STORAGE_ACCOUNT_NAME: optionalTrimmedString(),
-    AZURE_TABLE_CONNECTION_STRING: optionalTrimmedString(),
+    AZURE_CONNECTION_STRING: optionalTrimmedString(),
     AZURE_TRADE_TABLE_NAME: z.string().min(1),
     AZURE_MARKET_ITEMS_TABLE_NAME: z.string().min(1).default("MarketItems"),
     AZURE_TABLE_PARTITION_KEY: z.string().min(1).optional(),
@@ -80,9 +81,16 @@ export function loadAzureTableStorageConfigFromEnv(env: NodeJS.ProcessEnv = proc
 
 export function loadAzureBlobStorageOptionsFromEnv(env: NodeJS.ProcessEnv = process.env): AzureBotStorageOptions {
   const config = loadAzureBlobStorageConfigFromEnv(env);
+  if (!config.AZURE_CONNECTION_STRING && !config.AZURE_STORAGE_ACCOUNT_NAME) {
+    throw new Error(
+      "Azure blob storage config requires AZURE_CONNECTION_STRING or AZURE_STORAGE_ACCOUNT_NAME."
+    );
+  }
+
   return {
     accountName: config.ACCOUNT_NAME,
     containerName: config.AZURE_BLOB_CONTAINER_NAME,
+    connectionString: config.AZURE_CONNECTION_STRING,
     storageAccountName: config.AZURE_STORAGE_ACCOUNT_NAME
    }
   }
@@ -124,15 +132,15 @@ function createAzureQueueOptions(
     );
   }
 
-  if (!config.AZURE_QUEUE_CONNECTION_STRING && !storageAccountName) {
+  if (!config.AZURE_CONNECTION_STRING && !storageAccountName) {
     throw new Error(
-      "Azure queue config requires AZURE_QUEUE_CONNECTION_STRING, AZURE_QUEUE_ACCOUNT_NAME, or AZURE_STORAGE_ACCOUNT_NAME."
+      "Azure queue config requires AZURE_CONNECTION_STRING, AZURE_QUEUE_ACCOUNT_NAME, or AZURE_STORAGE_ACCOUNT_NAME."
     );
   }
 
   return {
     queueName,
-    connectionString: config.AZURE_QUEUE_CONNECTION_STRING,
+    connectionString: config.AZURE_CONNECTION_STRING,
     storageAccountName,
     createIfNotExists: config.AZURE_QUEUE_CREATE_IF_NOT_EXISTS,
   }
@@ -152,16 +160,16 @@ function createAzureTableStorageOptions(
   config: AzureTableStorageZodConfig,
   tableName: string
 ): AzureTableJsonStorageOptions {
-  if (!config.AZURE_TABLE_CONNECTION_STRING && !config.AZURE_STORAGE_ACCOUNT_NAME) {
+  if (!config.AZURE_CONNECTION_STRING && !config.AZURE_STORAGE_ACCOUNT_NAME) {
     throw new Error(
-      "Azure table storage config requires AZURE_TABLE_CONNECTION_STRING or AZURE_STORAGE_ACCOUNT_NAME."
+      "Azure table storage config requires AZURE_CONNECTION_STRING or AZURE_STORAGE_ACCOUNT_NAME."
     );
   }
 
   return {
     tableName,
     partitionKey: config.AZURE_TABLE_PARTITION_KEY,
-    connectionString: config.AZURE_TABLE_CONNECTION_STRING,
+    connectionString: config.AZURE_CONNECTION_STRING,
     storageAccountName: config.AZURE_STORAGE_ACCOUNT_NAME,
     createTableIfNotExists: config.AZURE_TABLE_CREATE_IF_NOT_EXISTS
   }
