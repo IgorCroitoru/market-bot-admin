@@ -31,6 +31,9 @@ param tradeTableName string
 @description('Market items table name used by tm-client.')
 param marketItemsTableName string
 
+@description('Partition key containing tm-client market item records.')
+param marketItemsPartitionKey string = 'tm-client'
+
 @description('Extra resource tags.')
 param tags object = {}
 

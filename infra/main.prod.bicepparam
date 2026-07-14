@@ -19,6 +19,7 @@ param deploymentTarget = 'oci'
 param deployLocalDev = false
 param tradeTableName = 'Trades'
 param marketItemsTableName = 'MarketItems'
+param marketItemsPartitionKey = 'tm-client'
 param botTradeQueueName = 'trade-requests'
 param botTradeStatusQueueName = 'trade-status-update'
 param platformTradeReadyQueueName = 'platform-trade-ready'

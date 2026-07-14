@@ -32,6 +32,7 @@ param platformTradeReadyQueueName = 'platform-trade-ready'
 
 param tradeTableName = 'Trades'
 param marketItemsTableName = 'MarketItems'
+param marketItemsPartitionKey = 'tm-client'
 
 param staticWebAppSku = 'Free'
 param appLocation = 'frontend'
