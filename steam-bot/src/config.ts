@@ -51,11 +51,26 @@ const queueEnvSchema = z.object({
   BOT_QUEUE_MAX_DEQUEUE_COUNT: numberFromEnv(5)
 });
 
+const storageEnvSchema = z.object({
+  BOT_STORAGE_DRIVER: z.enum(["local", "azure"]).default("azure"),
+  BOT_LOCAL_DATA_DIR: optionalTrimmedString(),
+  AZURE_BOT_CONTAINER_NAME: z.string().trim().min(1),
+  AZURE_CONNECTION_STRING: optionalTrimmedString(),
+  AZURE_STORAGE_ACCOUNT_NAME: optionalTrimmedString()
+});
+
 export type BotRuntimeConfig = z.infer<typeof envSchema>;
 export type BotQueueRuntimeConfig = z.infer<typeof queueEnvSchema>;
+export type BotStorageRuntimeConfig = z.infer<typeof storageEnvSchema>;
 
 export function loadBotConfigFromEnv(env: NodeJS.ProcessEnv = process.env): BotRuntimeConfig {
   return envSchema.parse(env);
+}
+
+export function loadBotStorageConfigFromEnv(
+  env: NodeJS.ProcessEnv = process.env
+): BotStorageRuntimeConfig {
+  return storageEnvSchema.parse(env);
 }
 
 export function loadBotOptionsFromEnv(env: NodeJS.ProcessEnv = process.env): BotOptions {

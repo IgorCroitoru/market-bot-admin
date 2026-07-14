@@ -3,6 +3,7 @@ package_update: true
 packages:
   - curl
   - openssh-clients
+  - policycoreutils-python-utils
 
 bootcmd:
   - mkdir -p /opt/market-bot/env /opt/market-bot/bin /opt/market-bot/artifacts /opt/market-bot/releases
@@ -97,5 +98,9 @@ runcmd:
   - sudo -u opc pm2 install pm2-logrotate
   - sudo -u opc pm2 set pm2-logrotate:max_size 10M
   - sudo -u opc pm2 set pm2-logrotate:retain 7
+  # Fix SELinux Permissions (Recommended for Oracle Linux)
+  - semanage fcontext -a -t var_run_t "/home/opc/.pm2(/.*)?" || semanage fcontext -m -t var_run_t "/home/opc/.pm2(/.*)?"
+  - restorecon -Rv /home/opc/.pm2
+
   - env PATH=$PATH:/usr/bin pm2 startup systemd -u opc --hp /home/opc
   - systemctl enable pm2-opc
