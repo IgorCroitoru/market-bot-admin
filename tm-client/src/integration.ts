@@ -8,6 +8,7 @@ import type {
   TradeItem as QueueTradeItem,
   TradeStatusQueueMessage,
 } from "@market-bot-admin/shared";
+import { marketPriceStep } from "@market-bot-admin/shared";
 import type { AppLogger } from "@market-bot-admin/logging";
 import {
   loadApiOptionsFromEnv,
@@ -26,7 +27,6 @@ import type { MarketItemRecord, TradeOffer } from "./types/schemas";
 import { MarketItemsStorageService } from "./MarketItemsStorageService";
 import { TradeStorageService } from "./TradeStorageService";
 
-const MARKET_PRICE_STEP = 10; // Market represents USD/EUR as 1000 units per major currency unit.
 const MASS_SET_PRICE_LIMIT = 50;
 
 type MarketPriceAdjustment = {
@@ -360,7 +360,8 @@ class MarketBotIntegration {
     }
 
     const minPrice = record.minPrice ?? record.price;
-    const adjustedPrice = Math.max(minPrice, lowestCompetingPrice - MARKET_PRICE_STEP);
+    const priceStep = marketPriceStep(record.currency);
+    const adjustedPrice = Math.max(minPrice, lowestCompetingPrice - priceStep);
 
     if (adjustedPrice >= record.price) {
       return null;

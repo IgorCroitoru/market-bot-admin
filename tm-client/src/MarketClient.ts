@@ -17,7 +17,7 @@ import {
   MassSetPriceResponse,
   SearchItemByHashNameSpecificResponse,
 } from './types';
-import { Currency } from '@market-bot-admin/shared';
+import { Currency, toMarketWritePrice } from '@market-bot-admin/shared';
 
 /**
  * Market CSGO API Client
@@ -301,7 +301,7 @@ export class MarketClient {
     return this.executeWithRetry(async () => {
       const url = `/${this.version}/add-to-sale?${this.buildQueryString({
         id,
-        price,
+        price: toMarketWritePrice(price, cur),
         cur,
       })}`;
       const response = await this.axiosInstance.get<any>(url);
@@ -316,7 +316,11 @@ export class MarketClient {
   async massAddToSale(items: Array<{ asset: number; price: number }>, cur: Currency = Currency.USD): Promise<any> {
     return this.executeWithRetry(async () => {
       const url = `/${this.version}/mass-add-to-sale?${this.buildQueryString({ cur })}`;
-      const response = await this.axiosInstance.post<any>(url, { items });
+      const marketItems = items.map((item) => ({
+        ...item,
+        price: toMarketWritePrice(item.price, cur),
+      }));
+      const response = await this.axiosInstance.post<any>(url, { items: marketItems });
       return response.data;
     });
   }
@@ -329,7 +333,7 @@ export class MarketClient {
     return this.executeWithRetry(async () => {
       const url = `/${this.version}/set-price?${this.buildQueryString({
         item_id: itemId,
-        price,
+        price: toMarketWritePrice(price, cur),
         cur,
       })}`;
       const response = await this.axiosInstance.get<any>(url);
@@ -351,7 +355,11 @@ export class MarketClient {
 
     return this.executeWithRetry(async () => {
       const url = `/${this.version}/mass-set-price?${this.buildQueryString({ cur })}`;
-      const response = await this.axiosInstance.post<MassSetPriceResponse>(url, { items });
+      const marketItems = items.map((item) => ({
+        ...item,
+        price: toMarketWritePrice(item.price, cur),
+      }));
+      const response = await this.axiosInstance.post<MassSetPriceResponse>(url, { items: marketItems });
       return response.data;
     });
   }
@@ -365,7 +373,7 @@ export class MarketClient {
       const url = `/${this.version}/mass-set-price-mhn?${this.buildQueryString({ cur })}`;
       const response = await this.axiosInstance.post<any>(url, {
         market_hash_name: marketHashName,
-        price,
+        price: toMarketWritePrice(price, cur),
       });
       return response.data;
     });

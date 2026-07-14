@@ -1,6 +1,8 @@
 // Export shared types and interfaces here
 export * from "./storage";
 export * from "./messages";
+export * from "./currency";
+export * from "./marketPrice";
 
 export interface ApiRequest {
   userId?: string;
@@ -21,10 +23,4 @@ export interface User {
 
 export type OfferStatusChangedMessage = {
  
-}
-
-export enum Currency {
-  RUB = 'RUB',
-  USD = 'USD',
-  EUR = 'EUR',
 }
