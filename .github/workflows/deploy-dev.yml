@@ -26,7 +26,6 @@ jobs:
   build_and_deploy:
     runs-on: ubuntu-latest
     name: Build and deploy dev
-    environment: dev-swa
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
