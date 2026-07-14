@@ -13,17 +13,71 @@ on:
   workflow_dispatch:
 
 permissions:
+  id-token: write
   contents: read
   pull-requests: write
+
+env:
+  AZURE_RESOURCE_GROUP: ${{ vars.AZURE_RESOURCE_GROUP }}
+  AZURE_STATIC_WEB_APP_NAME: ${{ vars.AZURE_STATIC_WEB_APP_NAME }}
+  AZURE_STORAGE_ACCOUNT_NAME: ${{ vars.AZURE_STORAGE_ACCOUNT_NAME }}
 
 jobs:
   build_and_deploy:
     runs-on: ubuntu-latest
     name: Build and deploy dev
-
+    environment: dev-swa
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+
+      - name: Validate Azure configuration
+        shell: bash
+        run: |
+          test -n "$AZURE_RESOURCE_GROUP" || {
+            echo "Missing GitHub repository variable: AZURE_RESOURCE_GROUP"
+            exit 1
+          }
+          test -n "$AZURE_STATIC_WEB_APP_NAME" || {
+            echo "Missing GitHub repository variable: AZURE_STATIC_WEB_APP_NAME"
+            exit 1
+          }
+          test -n "$AZURE_STORAGE_ACCOUNT_NAME" || {
+            echo "Missing GitHub repository variable: AZURE_STORAGE_ACCOUNT_NAME"
+            exit 1
+          }
+
+      - name: Login to Azure
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Configure Static Web App storage settings
+        shell: bash
+        run: |
+          connection_string="$(az storage account show-connection-string \
+            --name "$AZURE_STORAGE_ACCOUNT_NAME" \
+            --resource-group "$AZURE_RESOURCE_GROUP" \
+            --query connectionString \
+            --output tsv)"
+
+          test -n "$connection_string" || {
+            echo "Azure returned an empty storage connection string"
+            exit 1
+          }
+
+          echo "::add-mask::$connection_string"
+
+          az staticwebapp appsettings set \
+            --name "$AZURE_STATIC_WEB_APP_NAME" \
+            --resource-group "$AZURE_RESOURCE_GROUP" \
+            --setting-names \
+              "AZURE_STORAGE_ACCOUNT_NAME=$AZURE_STORAGE_ACCOUNT_NAME" \
+              "AZURE_CONNECTION_STRING=$connection_string" \
+            --only-show-errors \
+            --output none
 
       - name: Setup Node.js
         uses: actions/setup-node@v4

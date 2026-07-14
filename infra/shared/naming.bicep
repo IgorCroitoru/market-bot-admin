@@ -18,6 +18,10 @@ output resources object = {
     name: 'id-${prefix}-${projectName}-${environment}-github-acrpush'
   }
 
+  staticWebAppPipelineIdentity: {
+    name: 'id-${prefix}-${projectName}-${environment}-github-swa'
+  }
+
   runtimeKeyVault: {
     name: 'kv-${prefix}-${projectName}-${environment}'
   }

@@ -283,6 +283,18 @@ module runtimeStorage './storage/runtime-storage.bicep' = {
   }
 }
 
+module staticWebAppGithubIdentity './static-web-app/github-oidc-identity.bicep' = {
+  name: 'static-web-app-github-oidc-${environmentName}'
+  params: {
+    githubOwner: githubOwner
+    githubRepository: githubRepo
+    githubBranch: githubBranch
+    storageAccountName: runtimeStorage.outputs.storageAccountName
+    staticWebAppName: staticApp.outputs.staticWebAppName
+    githubIdentityName: resourceNames.staticWebAppPipelineIdentity.name
+  }
+}
+
 output deploymentTarget string = deploymentTarget
 output deployAzureHosting bool = deployAzureHosting
 output acrName string = deployAzureHosting ? azureHosting!.outputs.acrName : ''
@@ -295,6 +307,10 @@ output githubActionsFederatedSubject string = deployAzureHosting ? azureHosting!
 
 output staticWebAppName string = staticApp.outputs.staticWebAppName
 output staticWebAppDefaultHostname string = staticApp.outputs.defaultHostname
+output staticWebAppGithubClientId string = staticWebAppGithubIdentity.outputs.githubClientId
+output staticWebAppGithubPrincipalId string = staticWebAppGithubIdentity.outputs.githubPrincipalId
+output staticWebAppGithubTenantId string = staticWebAppGithubIdentity.outputs.azureTenantId
+output staticWebAppGithubSubscriptionId string = staticWebAppGithubIdentity.outputs.azureSubscriptionId
 
 output runtimeIdentityId string = deployAzureHosting ? azureHosting!.outputs.runtimeIdentityId : ''
 output runtimeIdentityClientId string = deployAzureHosting ? azureHosting!.outputs.runtimeIdentityClientId : ''
