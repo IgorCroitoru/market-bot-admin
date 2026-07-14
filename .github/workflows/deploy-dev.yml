@@ -38,6 +38,9 @@ jobs:
       - name: Build shared package
         run: npm run build -w @market-bot-admin/shared
 
+      - name: Build storage package
+        run: npm run build -w @market-bot-admin/storage
+
       # - name: Copy shared to api node_modules
       #   run: |
       #     mkdir -p api/node_modules/@market-bot-admin/shared
