@@ -17,7 +17,7 @@ import {
   MassSetPriceResponse,
   SearchItemByHashNameSpecificResponse,
 } from './types';
-import { Currency, toMarketWritePrice } from '@market-bot-admin/shared';
+import { Currency, normalizePrice, toMarketWritePrice } from '@market-bot-admin/shared';
 
 /**
  * Market CSGO API Client
@@ -449,7 +449,18 @@ export class MarketClient {
         with_alfaskins: options.withAlfaskins ? 1 : 0,
       })}`;
       const response = await this.axiosInstance.get<SearchItemByHashNameSpecificResponse>(url);
-      return response.data;
+
+      if (!response.data.success || !Array.isArray(response.data.data)) {
+        return response.data;
+      }
+
+      return {
+        ...response.data,
+        data: response.data.data.map((item) => ({
+          ...item,
+          price: normalizePrice(item.price, response.data.currency),
+        })),
+      };
     });
   }
 
