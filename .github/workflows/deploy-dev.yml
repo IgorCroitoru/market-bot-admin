@@ -76,6 +76,8 @@ jobs:
             --setting-names \
               "AZURE_STORAGE_ACCOUNT_NAME=$AZURE_STORAGE_ACCOUNT_NAME" \
               "AZURE_CONNECTION_STRING=$connection_string" \
+              "AZURE_TABLE_PARTITION_KEY=$AZURE_TABLE_PARTITION_KEY" \
+              "AZURE_MARKET_ITEMS_TABLE_NAME=$AZURE_MARKET_ITEMS_TABLE_NAME" \
             --only-show-errors \
             --output none
 
