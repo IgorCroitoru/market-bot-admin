@@ -41,38 +41,45 @@ async function listMarketItems() {
     );
 }
 
-async function updateMarketItem(itemId, changes) {
+async function updateMarketItemMinimumPrices(changes) {
   const storage = createStorage();
-  const record = await storage.get(itemId);
+  const records = await Promise.all(changes.map(({ id }) => storage.get(id)));
+  const missingIndex = records.findIndex((record) => !record);
 
-  if (!record) {
-    return null;
+  if (missingIndex >= 0) {
+    const error = new Error(`Market item ${changes[missingIndex].id} not found`);
+    error.code = "MARKET_ITEM_NOT_FOUND";
+    throw error;
   }
 
   const updatedAt = new Date().toISOString();
-  const price = normalizePrice(changes.price, record.currency);
-  const minPrice = normalizePrice(changes.minPrice, record.currency);
-  const updatedRecord = {
-    ...record,
-    price,
-    minPrice,
-    fixedPrice: changes.fixedPrice,
-    item: {
-      ...record.item,
-      price,
-    },
-    data: {
-      ...record.data,
-      previousPrice: record.price,
-      adminUpdatedAt: updatedAt,
-    },
-  };
+  const updatedRecords = records.map((record, index) => {
+    const minPrice = normalizePrice(changes[index].minPrice, record.currency);
 
-  await storage.set(itemId, updatedRecord);
-  return updatedRecord;
+    if (minPrice > record.price) {
+      const error = new Error(`Minimum price for ${changes[index].id} cannot exceed market price`);
+      error.code = "MIN_PRICE_ABOVE_MARKET_PRICE";
+      throw error;
+    }
+
+    return {
+      ...record,
+      minPrice,
+      fixedPrice: changes[index].fixedPrice,
+      data: {
+        ...record.data,
+        adminUpdatedAt: updatedAt,
+      },
+    };
+  });
+
+  await Promise.all(
+    updatedRecords.map((record, index) => storage.set(changes[index].id, record))
+  );
+  return updatedRecords;
 }
 
 module.exports = {
   listMarketItems,
-  updateMarketItem,
+  updateMarketItemMinimumPrices,
 };

@@ -1,10 +1,10 @@
 const { app } = require("@azure/functions");
 const { createApiLogger } = require("../logging");
 const { requireRole } = require("../auth");
-const { listMarketItems, updateMarketItem } = require("../marketItemsTable");
+const { listMarketItems, updateMarketItemMinimumPrices } = require("../marketItemsTable");
 
 app.http("marketItems", {
-  methods: ["GET"],
+  methods: ["GET", "PATCH"],
   authLevel: "anonymous",
   route: "market-items",
   handler: async (request, context) => {
@@ -15,71 +15,60 @@ app.http("marketItems", {
       return auth.response;
     }
 
-    try {
-      const items = await listMarketItems();
-      return { status: 200, jsonBody: { items } };
-    } catch (error) {
-      logger.error({ err: error }, "Failed to list market items");
-      return { status: 500, jsonBody: { error: "Failed to load market items" } };
-    }
-  },
-});
-
-app.http("updateMarketItem", {
-  methods: ["PATCH"],
-  authLevel: "anonymous",
-  route: "market-items/{id}",
-  handler: async (request, context) => {
-    const logger = createApiLogger(context);
-    const auth = requireRole(request, "admin");
-
-    if (!auth.ok) {
-      return auth.response;
+    if (request.method === "GET") {
+      try {
+        const items = await listMarketItems();
+        return { status: 200, jsonBody: { items } };
+      } catch (error) {
+        logger.error({ err: error }, "Failed to list market items");
+        return { status: 500, jsonBody: { error: "Failed to load market items" } };
+      }
     }
 
-    const itemId = request.params.id;
     let body;
-
     try {
       body = await request.json();
     } catch {
       return { status: 400, jsonBody: { error: "Request body must be valid JSON" } };
     }
 
-    const price = Number(body.price);
-    const minPrice = Number(body.minPrice);
-
-    if (!Number.isFinite(price) || price < 0) {
-      return { status: 400, jsonBody: { error: "price must be a non-negative number" } };
+    if (!Array.isArray(body.items) || body.items.length === 0) {
+      return { status: 400, jsonBody: { error: "items must be a non-empty array" } };
     }
 
-    if (!Number.isFinite(minPrice) || minPrice < 0) {
-      return { status: 400, jsonBody: { error: "minPrice must be a non-negative number" } };
+    const invalidChange = body.items.find((item) =>
+      !item || typeof item.id !== "string" || item.id.length === 0 ||
+      !Number.isFinite(Number(item.minPrice)) || Number(item.minPrice) < 0 ||
+      typeof item.fixedPrice !== "boolean"
+    );
+    if (invalidChange) {
+      return {
+        status: 400,
+        jsonBody: { error: "Each item requires an id, non-negative minPrice, and fixedPrice boolean" },
+      };
     }
 
-    if (minPrice > price) {
-      return { status: 400, jsonBody: { error: "minPrice cannot be greater than price" } };
-    }
-
-    if (typeof body.fixedPrice !== "boolean") {
-      return { status: 400, jsonBody: { error: "fixedPrice must be a boolean" } };
+    if (new Set(body.items.map((item) => item.id)).size !== body.items.length) {
+      return { status: 400, jsonBody: { error: "Item ids must be unique" } };
     }
 
     try {
-      const item = await updateMarketItem(itemId, {
-        price,
-        minPrice,
-        fixedPrice: body.fixedPrice,
-      });
-
-      if (!item) {
-        return { status: 404, jsonBody: { error: "Market item not found" } };
-      }
-
-      return { status: 200, jsonBody: { item } };
+      const changes = body.items.map((item) => ({
+        id: item.id,
+        minPrice: Number(item.minPrice),
+        fixedPrice: item.fixedPrice,
+      }));
+      const items = await updateMarketItemMinimumPrices(changes);
+      return { status: 200, jsonBody: { items } };
     } catch (error) {
-      logger.error({ err: error, itemId }, "Failed to update market item");
-      return { status: 500, jsonBody: { error: "Failed to update market item" } };
+      if (error.code === "MARKET_ITEM_NOT_FOUND") {
+        return { status: 404, jsonBody: { error: error.message } };
+      }
+      if (error.code === "MIN_PRICE_ABOVE_MARKET_PRICE") {
+        return { status: 400, jsonBody: { error: error.message } };
+      }
+      logger.error({ err: error }, "Failed to update market item minimum prices");
+      return { status: 500, jsonBody: { error: "Failed to update market item minimum prices" } };
     }
   },
 });

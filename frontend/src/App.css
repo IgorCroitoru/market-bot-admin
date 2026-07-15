@@ -87,6 +87,12 @@ button:disabled {
   color: var(--text-muted);
 }
 
+.summary .pending-count {
+  margin-left: 8px;
+  color: var(--accent);
+  font-weight: 700;
+}
+
 .item-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(min(100%, 350px), 1fr));
@@ -183,12 +189,21 @@ button:disabled {
   border-top: 1px solid var(--border);
 }
 
-.editor label:not(.checkbox-row) span {
+.editor label > span,
+.price-label > span {
   display: block;
   margin-bottom: 7px;
   color: var(--text-muted);
   font-size: 13px;
   font-weight: 700;
+}
+
+.price-label strong {
+  display: flex;
+  align-items: center;
+  min-height: 44px;
+  color: var(--text);
+  font-size: 18px;
 }
 
 input[type="number"] {
@@ -224,15 +239,19 @@ input:focus {
   accent-color: var(--accent);
 }
 
-.item-card__footer {
-  justify-content: space-between;
-  gap: 12px;
-  margin-top: auto;
-}
-
 .feedback {
   min-width: 0;
   font-size: 13px;
+}
+
+.page-feedback:not(:empty) {
+  margin: -8px 0 20px;
+}
+
+.field-error {
+  margin-top: 6px;
+  color: #b91c1c;
+  font-size: 12px;
 }
 
 .error { color: #b91c1c; }
