@@ -10,7 +10,6 @@
     "@azure/functions": "^4.14.0",
     "@market-bot-admin/shared": "file:../packages/shared",
     "@market-bot-admin/storage": "file:../packages/storage",
-    "market-bot-admin": "file:..",
     "pino": "^10.3.1"
   }
 }
