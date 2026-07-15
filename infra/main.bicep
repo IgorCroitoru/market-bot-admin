@@ -175,8 +175,11 @@ var localDevTags = union(commonTags, {
 
 var staticWebAppSettings = {
   staticWebAppName: resourceNames.staticWebApp.name
+  applicationInsightsName: resourceNames.staticWebAppApplicationInsights.name
+  logAnalyticsName: resourceNames.staticWebAppLogAnalytics.name
   location: effectiveResourceLocations.staticWebApp
   skuName: staticWebAppSku
+  tags: commonTags
   buildProperties: {
     appLocation: appLocation
     apiLocation: apiLocation
@@ -307,6 +310,8 @@ output githubActionsFederatedSubject string = deployAzureHosting ? azureHosting!
 
 output staticWebAppName string = staticApp.outputs.staticWebAppName
 output staticWebAppDefaultHostname string = staticApp.outputs.defaultHostname
+output staticWebAppApplicationInsightsName string = staticApp.outputs.applicationInsightsName
+output staticWebAppLogAnalyticsName string = staticApp.outputs.logAnalyticsName
 output staticWebAppGithubClientId string = staticWebAppGithubIdentity.outputs.githubClientId
 output staticWebAppGithubPrincipalId string = staticWebAppGithubIdentity.outputs.githubPrincipalId
 output staticWebAppGithubTenantId string = staticWebAppGithubIdentity.outputs.azureTenantId

@@ -54,6 +54,14 @@ output resources object = {
     name: '${prefix}-${projectName}-${environment}'
   }
 
+  staticWebAppApplicationInsights: {
+    name: 'appi-${prefix}-${projectName}-${environment}'
+  }
+
+  staticWebAppLogAnalytics: {
+    name: 'log-${prefix}-${projectName}-${environment}-swa'
+  }
+
   blobContainer: {
     name: '${prefix}-${projectName}'
   }
