@@ -53,7 +53,7 @@ export interface MarketItemRecord {
     price: number;
     currency: Currency;
     fixedPrice: boolean
-    status: "on-sale" | "sold-awaiting-transfer" | "awaiting-seller-transfer" | "ready-to-pick-up" | "unknown";
+    status: "on-sale" | "sold-awaiting-transfer" | "awaiting-seller-transfer" | "ready-to-pick-up" | "trade-protection" |"unknown";
     statusCode: string;
     isOnSale: boolean;
     firstSeenAt: string;

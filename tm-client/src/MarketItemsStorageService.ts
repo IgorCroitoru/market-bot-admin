@@ -83,6 +83,8 @@ function mapMarketItemStatus(status: string): MarketItemRecord["status"] {
       return "awaiting-seller-transfer";
     case "4":
       return "ready-to-pick-up";
+    case "7":
+      return "trade-protection";
     default:
       return "unknown";
   }

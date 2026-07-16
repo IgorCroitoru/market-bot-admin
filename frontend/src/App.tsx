@@ -15,6 +15,7 @@ type MarketItem = {
   currency: string;
   fixedPrice: boolean;
   status: string;
+  statusCode: string;
   isOnSale: boolean;
   lastSeenAt: string;
 };
@@ -41,6 +42,7 @@ function ItemEditor({
   onMinPriceChange,
   onFixedPriceChange,
 }: ItemEditorProps) {
+  const isSoldAwaitingTradeProtection = item.statusCode === "7";
   const priceStep = item.currency === "USD" || item.currency === "EUR" ? "0.001" : "1";
 
   return (
@@ -66,34 +68,38 @@ function ItemEditor({
 
       <div className="editor">
         <div className="price-label">
-          <span>Market price</span>
+          <span>{isSoldAwaitingTradeProtection ? "Price sold" : "Market price"}</span>
           <strong>{item.price} {item.currency}</strong>
         </div>
 
-        <label>
-          <span>Minimum price ({item.currency})</span>
-          <input
-            type="number"
-            min="0"
-            max={item.price}
-            step={priceStep}
-            value={minPrice}
-            disabled={disabled}
-            aria-invalid={Boolean(error)}
-            onChange={(event) => onMinPriceChange(event.target.value)}
-          />
-          {error && <span className="field-error">{error}</span>}
-        </label>
+        {!isSoldAwaitingTradeProtection && (
+          <>
+            <label>
+              <span>Minimum price ({item.currency})</span>
+              <input
+                type="number"
+                min="0"
+                max={item.price}
+                step={priceStep}
+                value={minPrice}
+                disabled={disabled}
+                aria-invalid={Boolean(error)}
+                onChange={(event) => onMinPriceChange(event.target.value)}
+              />
+              {error && <span className="field-error">{error}</span>}
+            </label>
 
-        <label className="checkbox-row">
-          <input
-            type="checkbox"
-            checked={fixedPrice}
-            disabled={disabled}
-            onChange={(event) => onFixedPriceChange(event.target.checked)}
-          />
-          <span>Keep market price fixed</span>
-        </label>
+            <label className="checkbox-row">
+              <input
+                type="checkbox"
+                checked={fixedPrice}
+                disabled={disabled}
+                onChange={(event) => onFixedPriceChange(event.target.checked)}
+              />
+              <span>Keep market price fixed</span>
+            </label>
+          </>
+        )}
       </div>
     </article>
   );
@@ -150,7 +156,7 @@ export default function App() {
   }, [loadItems]);
 
   const validationErrors = useMemo(() => Object.fromEntries(
-    items.flatMap((item) => {
+    items.filter((item) => item.statusCode !== "7").flatMap((item) => {
       const minPrice = Number(drafts[item.id]);
       if (drafts[item.id]?.trim() === "" || !Number.isFinite(minPrice) || minPrice < 0) {
         return [[item.id, "Enter a non-negative price"]];
@@ -162,11 +168,20 @@ export default function App() {
     })
   ), [drafts, items]);
 
-  const changedItems = useMemo(() => items.filter((item) => {
+  const changedItems = useMemo(() => items.filter((item) => item.statusCode !== "7").filter((item) => {
     const savedMinPrice = item.minPrice ?? item.price;
     return Number(drafts[item.id]) !== savedMinPrice ||
       fixedPriceDrafts[item.id] !== item.fixedPrice;
   }), [drafts, fixedPriceDrafts, items]);
+
+  const sortedItems = useMemo(() => [...items].sort((left, right) => {
+    const soldOrder = Number(left.statusCode === "7") - Number(right.statusCode === "7");
+    if (soldOrder !== 0) {
+      return soldOrder;
+    }
+
+    return left.item.market_hash_name.localeCompare(right.item.market_hash_name);
+  }), [items]);
 
   async function saveAll() {
     if (changedItems.length === 0 || Object.keys(validationErrors).length > 0) {
@@ -250,7 +265,7 @@ export default function App() {
       )}
 
       <section className="item-grid">
-        {items.map((item) => (
+        {sortedItems.map((item) => (
           <ItemEditor
             key={item.id}
             item={item}
