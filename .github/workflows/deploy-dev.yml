@@ -79,7 +79,7 @@ jobs:
               "AZURE_CONNECTION_STRING=$connection_string" \
               "AZURE_TABLE_PARTITION_KEY=$AZURE_TABLE_PARTITION_KEY" \
               "AZURE_MARKET_ITEMS_TABLE_NAME=$AZURE_MARKET_ITEMS_TABLE_NAME" \
-              "SWA_STEAM_SHARED_SECRET=$SWA_STEAM_SHARED_SECRET" \
+              "STEAM_SHARED_SECRET=$SWA_STEAM_SHARED_SECRET" \
             --only-show-errors \
             --output none
 
