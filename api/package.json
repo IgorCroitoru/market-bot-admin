@@ -10,6 +10,7 @@
     "@azure/functions": "^4.14.0",
     "@market-bot-admin/shared": "file:../packages/shared",
     "@market-bot-admin/storage": "file:../packages/storage",
-    "pino": "^10.3.1"
+    "pino": "^10.3.1",
+    "steam-totp": "^2.1.2"
   }
 }

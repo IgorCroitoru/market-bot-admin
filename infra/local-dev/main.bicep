@@ -1,14 +1,14 @@
-@description('Azure region.')
-param location string = resourceGroup().location
+// @description('Azure region.')
+// param location string = resourceGroup().location
 
 @description('Globally unique storage account name. Lowercase letters and numbers only, 3-24 chars.')
 param storageAccountName string
 
-@description('Blob container used by AzureBotStorage.')
-param blobContainerName string = 'cs-tm-bot'
+// @description('Blob container used by AzureBotStorage.')
+// param blobContainerName string = 'cs-tm-bot'
 
-@description('Globally unique Key Vault name.')
-param keyVaultName string
+// @description('Globally unique Key Vault name.')
+// param keyVaultName string
 
 @description('Your Microsoft Entra user object ID for local development.')
 param developerObjectId string
@@ -35,17 +35,17 @@ param tags object = {
   managedBy: 'bicep'
 }
 
-module storageKeyVault 'local-dev-storage-keyvault.bicep' = {
-  name: 'storageKeyVault'
-  params: {
-    location: location
-    blobContainerName: blobContainerName
-    tags: tags
-    developerObjectId: developerObjectId
-    keyVaultName: keyVaultName
-    storageAccountName: storageAccountName
-  }
-}
+// module storageKeyVault 'local-dev-storage-keyvault.bicep' = {
+//   name: 'storageKeyVault'
+//   params: {
+//     location: location
+//     blobContainerName: blobContainerName
+//     tags: tags
+//     developerObjectId: developerObjectId
+//     keyVaultName: keyVaultName
+//     storageAccountName: storageAccountName
+//   }
+// }
 
 module queue 'local-dev-queue.bicep' = {
   name: 'queue'
@@ -59,7 +59,7 @@ module queue 'local-dev-queue.bicep' = {
     ]
   }
   dependsOn: [
-    storageKeyVault
+    // storageKeyVault
   ]
 }
 
@@ -74,6 +74,6 @@ module tableStorage 'local-dev-table.storage.bicep' = {
     developerObjectId: developerObjectId
   }
   dependsOn: [
-    storageKeyVault
+    // storageKeyVault
   ]
 }

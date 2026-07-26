@@ -23,6 +23,110 @@ type MarketItem = {
 type MinimumPriceDrafts = Record<string, string>;
 type FixedPriceDrafts = Record<string, boolean>;
 
+type SteamGuardCodeResponse = {
+  code: string;
+  generatedAt: string;
+  expiresAt: string;
+  validitySeconds: number;
+};
+
+function SteamGuardGenerator() {
+  const [result, setResult] = useState<SteamGuardCodeResponse | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+  const [now, setNow] = useState(Date.now());
+  const [copied, setCopied] = useState(false);
+
+  useEffect(() => {
+    if (!result) return;
+    const intervalId = window.setInterval(() => setNow(Date.now()), 100);
+    return () => window.clearInterval(intervalId);
+  }, [result]);
+
+  const expiresAt = result ? new Date(result.expiresAt).getTime() : 0;
+  const generatedAt = result ? new Date(result.generatedAt).getTime() : 0;
+  const remainingMs = Math.max(0, expiresAt - now);
+  const windowMs = Math.max(1, expiresAt - generatedAt);
+  const availability = Math.min(100, (remainingMs / windowMs) * 100);
+  const secondsRemaining = Math.ceil(remainingMs / 1000);
+
+  async function generateCode() {
+    setLoading(true);
+    setError("");
+    setCopied(false);
+
+    try {
+      const response = await fetch("/api/steam-guard-code", {
+        method: "POST",
+        credentials: "include",
+        cache: "no-store",
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || "Could not generate Steam Guard code");
+      setResult(data);
+      setNow(Date.now());
+    } catch (generateError) {
+      setError(generateError instanceof Error ? generateError.message : "Could not generate Steam Guard code");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function copyCode() {
+    if (!result || remainingMs === 0) return;
+    await navigator.clipboard.writeText(result.code);
+    setCopied(true);
+  }
+
+  return (
+    <section className="guard-panel" aria-labelledby="steam-guard-heading">
+      <div className="guard-panel__intro">
+        <div>
+          <p className="eyebrow">Steam security</p>
+          <h2 id="steam-guard-heading">Steam Guard code</h2>
+          <p>Generate a time-limited login code for the configured account.</p>
+        </div>
+        <button className="save-button" onClick={() => void generateCode()} disabled={loading}>
+          {loading ? "Generating…" : result ? "Generate again" : "Generate code"}
+        </button>
+      </div>
+
+      {error && <p className="error guard-panel__error" role="alert">{error}</p>}
+
+      {result && (
+        <div className={`guard-result ${remainingMs === 0 ? "guard-result--expired" : ""}`}>
+          <button
+            className="guard-code"
+            onClick={() => void copyCode()}
+            disabled={remainingMs === 0}
+            aria-label="Copy Steam Guard code"
+          >
+            {result.code}
+          </button>
+          <div className="guard-validity">
+            <div className="guard-validity__label">
+              <span>{remainingMs > 0 ? `${secondsRemaining}s remaining` : "Code expired"}</span>
+              <span>
+                {copied ? "Copied" : `Expires ${new Date(result.expiresAt).toLocaleTimeString()}`}
+              </span>
+            </div>
+            <div
+              className="guard-progress"
+              role="progressbar"
+              aria-label="Code availability"
+              aria-valuemin={0}
+              aria-valuemax={100}
+              aria-valuenow={Math.round(availability)}
+            >
+              <span style={{ width: `${availability}%` }} />
+            </div>
+          </div>
+        </div>
+      )}
+    </section>
+  );
+}
+
 type ItemEditorProps = {
   item: MarketItem;
   minPrice: string;
@@ -248,6 +352,8 @@ export default function App() {
           <a className="logout-link" href="/.auth/logout">Logout</a>
         </div>
       </header>
+
+      <SteamGuardGenerator />
 
       <section className="summary" aria-label="Inventory summary">
         <strong>{items.length}</strong>

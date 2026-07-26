@@ -152,6 +152,7 @@ var resourceNames = naming.outputs.resources
 var effectiveResourceLocations = union({
   acr: location
   staticWebApp: location
+  staticWebAppKeyVault: location
   localDev: location
   runtimeIdentity: location
   runtimeKeyVault: location
@@ -180,6 +181,10 @@ var staticWebAppSettings = {
   location: effectiveResourceLocations.staticWebApp
   skuName: staticWebAppSku
   tags: commonTags
+  keyVaultName: resourceNames.staticWebAppKeyVault.name
+  keyVaultLocation: effectiveResourceLocations.staticWebAppKeyVault
+  developerObjectId: developerObjectId
+  developerPermissionToWriteKv: developerPermissionToWriteKv
   buildProperties: {
     appLocation: appLocation
     apiLocation: apiLocation
@@ -255,10 +260,10 @@ module localDev './local-dev/main.bicep' = if (deployLocalDev) {
   params: {
     tradeTableName: tradeTableName
     marketItemsTableName: marketItemsTableName
-    location: effectiveResourceLocations.localDev
+    // location: effectiveResourceLocations.localDev
     storageAccountName: resourceNames.localStorage.name
-    blobContainerName: resourceNames.blobContainer.name
-    keyVaultName: resourceNames.localKeyVault.name
+    // blobContainerName: resourceNames.blobContainer.name
+    // keyVaultName: resourceNames.localKeyVault.name
     developerObjectId: developerObjectId
     tradesQueueName: botTradeQueueName
     statusQueueName: botTradeStatusQueueName
