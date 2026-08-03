@@ -2,6 +2,7 @@ import { DefaultAzureCredential } from "@azure/identity";
 import { QueueClient } from "@azure/storage-queue";
 import type { TokenCredential } from "@azure/core-auth";
 import type { DequeuedMessageItem } from "@azure/storage-queue";
+import type { StorageQueue } from "./StorageQueue";
 
 const MAX_AZURE_QUEUE_MESSAGE_BYTES = 64 * 1024;
 const AZURE_QUEUE_NAME_PATTERN = /^[a-z0-9](?!.*--)[a-z0-9-]{1,61}[a-z0-9]$/;
@@ -106,7 +107,7 @@ export type ConsumeForeverOptions<T> = ReceiveOptions & {
   ) => void | Promise<void>;
 };
 
-export class AzureStorageQueue<TMessage> {
+export class AzureStorageQueue<TMessage> implements StorageQueue<TMessage> {
   private readonly client: QueueClient;
   private readonly encoding: "base64-json" | "plain-json";
   private initialized = false;

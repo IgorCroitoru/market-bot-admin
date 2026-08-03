@@ -24,6 +24,7 @@ const envSchema = z.object({
 });
 
 const azureQueueConfigSchema = z.object({
+  QUEUE_DRIVER: z.enum(["azure", "inmemory"]).default("azure"),
   AZURE_CONNECTION_STRING: optionalTrimmedString(),
   AZURE_QUEUE_ACCOUNT_NAME: optionalTrimmedString(),
   AZURE_STORAGE_ACCOUNT_NAME: optionalTrimmedString(),
@@ -37,17 +38,20 @@ const azureQueueConfigSchema = z.object({
 });
 
 const azureBlobStorageConfigSchema = z.object({
+  STORAGE_DRIVER: z.enum(["azure", "local", "inmemory"]).default("azure"),
+  LOCAL_STORAGE_DIR: z.string().default(".tm-client-data"),
   ACCOUNT_NAME: z.string(),
   AZURE_CONNECTION_STRING: optionalTrimmedString(),
   AZURE_STORAGE_ACCOUNT_NAME: optionalTrimmedString(),
-  AZURE_BLOB_CONTAINER_NAME: z.string()
+  AZURE_BLOB_CONTAINER_NAME: z.string().default("market-bot")
 });
 
 const azureTableStorageConfigSchema = z
   .object({
     AZURE_STORAGE_ACCOUNT_NAME: optionalTrimmedString(),
     AZURE_CONNECTION_STRING: optionalTrimmedString(),
-    AZURE_TRADE_TABLE_NAME: z.string().min(1),
+    STORAGE_DRIVER: z.enum(["azure", "local", "inmemory"]).default("azure"),
+    AZURE_TRADE_TABLE_NAME: z.string().min(1).default("Trades"),
     AZURE_MARKET_ITEMS_TABLE_NAME: z.string().min(1).default("MarketItems"),
     AZURE_TABLE_PARTITION_KEY: z.string().min(1).optional(),
     AZURE_TABLE_CREATE_IF_NOT_EXISTS: booleanFromEnv(false),
@@ -62,6 +66,13 @@ export type ApiRuntimeZodConfig = z.infer<typeof envSchema>;
 export type AzureQueueZodConfig = z.infer<typeof azureQueueConfigSchema>;
 export type AzureBlobStorageZodConfig = z.infer<typeof azureBlobStorageConfigSchema>;
 export type AzureTableStorageZodConfig = z.infer<typeof azureTableStorageConfigSchema>;
+
+export function loadInfrastructureDriversFromEnv(env: NodeJS.ProcessEnv = process.env) {
+  return {
+    queue: loadAzureQueueZodConfigFromEnv(env).QUEUE_DRIVER,
+    storage: loadAzureBlobStorageConfigFromEnv(env).STORAGE_DRIVER
+  };
+}
 
 export function loadApiZodConfigFromEnv(env: NodeJS.ProcessEnv = process.env): ApiRuntimeZodConfig {
   return envSchema.parse(env);

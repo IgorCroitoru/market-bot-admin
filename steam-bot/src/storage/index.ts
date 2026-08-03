@@ -1,9 +1,13 @@
-import { AzureBlobStorage, type KeyValueStore } from "@market-bot-admin/storage";
+import {
+  AzureBlobStorage,
+  InMemoryStorage,
+  type KeyValueStore
+} from "@market-bot-admin/storage";
 import type { BotStorageItems } from "@market-bot-admin/shared";
 import { loadBotStorageConfigFromEnv } from "../config";
 import { LocalBotStorage } from "./LocalBotStorage";
 
-export type StorageDriver = "local" | "azure";
+export type StorageDriver = "local" | "azure" | "inmemory";
 
 export interface CreateStorageOptions {
   accountName: string;
@@ -26,6 +30,10 @@ export function createBotStorageFromEnv(options: CreateStorageOptions): KeyValue
       connectionString,
       storageAccountName,
     });
+  }
+
+  if (config.BOT_STORAGE_DRIVER === "inmemory") {
+    return new InMemoryStorage<BotStorageItems>();
   }
 
   return new LocalBotStorage({

@@ -1,5 +1,9 @@
-import { AzureStorageQueue } from "@market-bot-admin/queue";
-import { AzureBlobStorage, AzureTableJsonStorage, KeyValueStore } from "@market-bot-admin/storage";
+import type {
+  QueueConsumer,
+  QueueSender,
+  StorageQueue
+} from "@market-bot-admin/queue";
+import type { EntityStore, KeyValueStore } from "@market-bot-admin/storage";
 import type {
   BotStorageItems,
   IncomingTradeTaskMessage,
@@ -10,17 +14,6 @@ import type {
 } from "@market-bot-admin/shared";
 import { marketPriceStep } from "@market-bot-admin/shared";
 import type { AppLogger } from "@market-bot-admin/logging";
-import {
-  loadApiOptionsFromEnv,
-  loadAzureMarketItemsTableStorageOptionsFromEnv,
-  loadAzureBlobStorageOptionsFromEnv,
-  loadAzureQueueConsumerOptionsFromEnv,
-  loadAzurePlatformTradeReadyQueueOptionsFromEnv,
-  loadAzureTradeQueueOptionsFromEnv,
-  loadAzureStatusQueueOptionsFromEnv,
-  loadAzureTableStorageOptionsFromEnv,
-} from "./config";
-import { logger } from "./logger";
 import { MarketClient } from "./MarketClient";
 import type { ClientOptions, ItemInfo, OfferGiveP2P, Trade } from "./types";
 import type { MarketItemRecord, TradeOffer } from "./types/schemas";
@@ -39,17 +32,36 @@ type MarketP2POffer = OfferGiveP2P & {
   hash: string;
 };
 
+export interface MarketBotIntegrationDependencies {
+  tradeQueue: QueueSender<IncomingTradeTaskMessage>;
+  statusQueue: QueueConsumer<TradeStatusQueueMessage>;
+  platformTradeReadyQueue: StorageQueue<PlatformTradeReadyMessage>;
+  botStorage: KeyValueStore<BotStorageItems>;
+  tradesStorage: EntityStore;
+  marketItemsStorage: EntityStore;
+  logger: AppLogger;
+}
+
+export interface MarketBotIntegrationOptions {
+  client: ClientOptions;
+  queueConsumer: {
+    visibilityTimeoutSeconds: number;
+    maxMessages: number;
+    maxDequeueCount: number;
+  };
+}
+
 class MarketBotIntegration {
   private readonly client: MarketClient;
-  private readonly tradeQueue: AzureStorageQueue<IncomingTradeTaskMessage>;
-  private readonly statusQueue: AzureStorageQueue<TradeStatusQueueMessage>;
-  private readonly platformTradeReadyQueue: AzureStorageQueue<PlatformTradeReadyMessage>;
+  private readonly tradeQueue: QueueSender<IncomingTradeTaskMessage>;
+  private readonly statusQueue: QueueConsumer<TradeStatusQueueMessage>;
+  private readonly platformTradeReadyQueue: StorageQueue<PlatformTradeReadyMessage>;
   private readonly botStorage: KeyValueStore<BotStorageItems>;
   private readonly tradesService: TradeStorageService;
   private readonly marketItemsService: MarketItemsStorageService;
   private readonly logger: AppLogger;
   private readonly options: ClientOptions;
-  private readonly queueConsumerOptions: ReturnType<typeof loadAzureQueueConsumerOptionsFromEnv>;
+  private readonly queueConsumerOptions: MarketBotIntegrationOptions["queueConsumer"];
   private readonly statusQueueAbortController = new AbortController();
   private readonly platformTradeReadyQueueAbortController = new AbortController();
 
@@ -63,23 +75,20 @@ class MarketBotIntegration {
   private statusQueueConsumePromise: Promise<void> | null = null;
   private platformTradeReadyQueueConsumePromise: Promise<void> | null = null;
 
-  constructor() {
-    this.logger = logger;
-    this.options = loadApiOptionsFromEnv(process.env);
+  constructor(
+    options: MarketBotIntegrationOptions,
+    dependencies: MarketBotIntegrationDependencies
+  ) {
+    this.logger = dependencies.logger;
+    this.options = options.client;
     this.client = new MarketClient(this.options);
-    this.tradeQueue = new AzureStorageQueue(loadAzureTradeQueueOptionsFromEnv(process.env));
-    this.statusQueue = new AzureStorageQueue(loadAzureStatusQueueOptionsFromEnv(process.env));
-    this.platformTradeReadyQueue = new AzureStorageQueue(
-      loadAzurePlatformTradeReadyQueueOptionsFromEnv(process.env)
-    );
-    this.queueConsumerOptions = loadAzureQueueConsumerOptionsFromEnv(process.env);
-    this.botStorage = new AzureBlobStorage(loadAzureBlobStorageOptionsFromEnv(process.env));
-    this.tradesService = new TradeStorageService(
-      new AzureTableJsonStorage(loadAzureTableStorageOptionsFromEnv(process.env))
-    );
-    this.marketItemsService = new MarketItemsStorageService(
-      new AzureTableJsonStorage(loadAzureMarketItemsTableStorageOptionsFromEnv(process.env))
-    );
+    this.tradeQueue = dependencies.tradeQueue;
+    this.statusQueue = dependencies.statusQueue;
+    this.platformTradeReadyQueue = dependencies.platformTradeReadyQueue;
+    this.queueConsumerOptions = options.queueConsumer;
+    this.botStorage = dependencies.botStorage;
+    this.tradesService = new TradeStorageService(dependencies.tradesStorage);
+    this.marketItemsService = new MarketItemsStorageService(dependencies.marketItemsStorage);
   }
 
   async start(): Promise<void> {
@@ -656,7 +665,7 @@ class MarketBotIntegration {
 
     const response = await this.client.tradeReady(message.offerId);
 
-    logger.debug({
+    this.logger.debug({
       queueMessageId: message.statusQueueMessageId,
       tradeOfferId: message.tradeOfferId,
       offerId: message.offerId,
@@ -935,37 +944,6 @@ function mapTradeStatus(
   }
 
   return currentStatus;
-}
-
-export async function main(): Promise<void> {
-  const integration = new MarketBotIntegration();
-  let stopping = false;
-
-  const stopIntegration = async (): Promise<void> => {
-    if (stopping) {
-      return;
-    }
-
-    stopping = true;
-    await integration.stop();
-  };
-
-  process.once("SIGINT", () => {
-    void stopIntegration();
-  });
-
-  process.once("SIGTERM", () => {
-    void stopIntegration();
-  });
-
-  try {
-    await integration.start();
-    logger.info("Market bot integration started");
-  } catch (error) {
-    logger.error({ err: error }, "Market bot integration failed to start");
-    await stopIntegration();
-    process.exitCode = 1;
-  }
 }
 
 export { MarketBotIntegration };

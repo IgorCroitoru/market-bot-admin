@@ -1,4 +1,8 @@
-import { AzureStorageQueue, type AzureQueueConfig, type ReceivedQueueMessage } from "@market-bot-admin/queue";
+import {
+  type QueueConsumer,
+  type QueueSender,
+  type ReceivedQueueMessage
+} from "@market-bot-admin/queue";
 import type TradeOffer from "steam-tradeoffer-manager/lib/classes/TradeOffer";
 import TradeOfferManager from "steam-tradeoffer-manager";
 import type { AppLogger } from "@market-bot-admin/logging";
@@ -16,17 +20,20 @@ export type {
 } from "@market-bot-admin/shared";
 
 export interface TaskControllerOptions {
-  incomingQueue: AzureQueueConfig;
-  statusQueue: AzureQueueConfig;
   logger?: AppLogger;
   visibilityTimeoutSeconds?: number;
   maxMessages?: number;
   maxDequeueCount?: number;
 }
 
+export interface TaskControllerDependencies {
+  incomingQueue: QueueConsumer<IncomingTradeTaskMessage>;
+  statusQueue: QueueSender<TradeStatusQueueMessage>;
+}
+
 export class TaskController {
-  private readonly incomingQueue: AzureStorageQueue<IncomingTradeTaskMessage>;
-  private readonly statusQueue: AzureStorageQueue<TradeStatusQueueMessage>;
+  private readonly incomingQueue: QueueConsumer<IncomingTradeTaskMessage>;
+  private readonly statusQueue: QueueSender<TradeStatusQueueMessage>;
   private readonly log: AppLogger;
   private readonly abortController = new AbortController();
   private readonly visibilityTimeoutSeconds: number;
@@ -36,10 +43,11 @@ export class TaskController {
 
   constructor(
     private readonly bot: Bot,
-    options: TaskControllerOptions
+    options: TaskControllerOptions,
+    dependencies: TaskControllerDependencies
   ) {
-    this.incomingQueue = new AzureStorageQueue(options.incomingQueue);
-    this.statusQueue = new AzureStorageQueue(options.statusQueue);
+    this.incomingQueue = dependencies.incomingQueue;
+    this.statusQueue = dependencies.statusQueue;
     this.log = options.logger ?? defaultLogger;
     this.visibilityTimeoutSeconds = options.visibilityTimeoutSeconds ?? 60;
     this.maxMessages = options.maxMessages ?? 1;

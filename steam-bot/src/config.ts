@@ -40,6 +40,7 @@ const envSchema = z.object({
 
 const queueEnvSchema = z.object({
   BOT_QUEUE_ENABLED: optionalBooleanFromEnv(),
+  BOT_QUEUE_DRIVER: z.enum(["azure", "inmemory"]).default("azure"),
   BOT_INCOMING_TRADE_QUEUE_NAME: optionalTrimmedString(),
   BOT_TRADE_STATUS_QUEUE_NAME: optionalTrimmedString(),
   AZURE_CONNECTION_STRING: optionalTrimmedString(),
@@ -52,7 +53,7 @@ const queueEnvSchema = z.object({
 });
 
 const storageEnvSchema = z.object({
-  BOT_STORAGE_DRIVER: z.enum(["local", "azure"]).default("azure"),
+  BOT_STORAGE_DRIVER: z.enum(["local", "azure", "inmemory"]).default("azure"),
   BOT_LOCAL_DATA_DIR: optionalTrimmedString(),
   AZURE_BOT_CONTAINER_NAME: z.string().trim().min(1),
   AZURE_CONNECTION_STRING: optionalTrimmedString(),
@@ -61,6 +62,13 @@ const storageEnvSchema = z.object({
 
 export type BotRuntimeConfig = z.infer<typeof envSchema>;
 export type BotQueueRuntimeConfig = z.infer<typeof queueEnvSchema>;
+export interface TaskControllerBootstrapOptions extends TaskControllerOptions {
+  queueDriver: "azure" | "inmemory";
+  incomingQueueName: string;
+  statusQueueName: string;
+  incomingQueue?: AzureQueueConfig;
+  statusQueue?: AzureQueueConfig;
+}
 export type BotStorageRuntimeConfig = z.infer<typeof storageEnvSchema>;
 
 export function loadBotConfigFromEnv(env: NodeJS.ProcessEnv = process.env): BotRuntimeConfig {
@@ -105,7 +113,7 @@ export function loadBotOptionsFromEnv(env: NodeJS.ProcessEnv = process.env): Bot
 
 export function loadTaskControllerOptionsFromEnv(
   env: NodeJS.ProcessEnv = process.env
-): TaskControllerOptions | null {
+): TaskControllerBootstrapOptions | null {
   const config = queueEnvSchema.parse(env);
   const enabled = config.BOT_QUEUE_ENABLED ?? Boolean(
     config.BOT_INCOMING_TRADE_QUEUE_NAME && config.BOT_TRADE_STATUS_QUEUE_NAME
@@ -121,14 +129,18 @@ export function loadTaskControllerOptionsFromEnv(
     );
   }
 
-  const baseQueueConfig = createAzureQueueConfig(config);
+  const baseQueueConfig =
+    config.BOT_QUEUE_DRIVER === "azure" ? createAzureQueueConfig(config) : undefined;
 
   return {
-    incomingQueue: {
+    queueDriver: config.BOT_QUEUE_DRIVER,
+    incomingQueueName: config.BOT_INCOMING_TRADE_QUEUE_NAME,
+    statusQueueName: config.BOT_TRADE_STATUS_QUEUE_NAME,
+    incomingQueue: baseQueueConfig && {
       ...baseQueueConfig,
       queueName: config.BOT_INCOMING_TRADE_QUEUE_NAME
     },
-    statusQueue: {
+    statusQueue: baseQueueConfig && {
       ...baseQueueConfig,
       queueName: config.BOT_TRADE_STATUS_QUEUE_NAME
     },

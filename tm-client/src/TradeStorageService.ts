@@ -1,4 +1,4 @@
-import { EntityStore } from "../../packages/storage/dist/interfaces";
+import type { EntityStore } from "@market-bot-admin/storage";
 import { TradeOffer } from "./types/schemas";
 
 export class TradeStorageService {

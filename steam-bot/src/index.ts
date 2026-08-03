@@ -4,6 +4,11 @@ import { loadBotOptionsFromEnv, loadTaskControllerOptionsFromEnv } from "./confi
 import { createBotStorageFromEnv } from "./storage";
 import { logger } from "./logger";
 import { TaskController } from "./TaskController";
+import { AzureStorageQueue, InMemoryStorageQueue } from "@market-bot-admin/queue";
+import type {
+  IncomingTradeTaskMessage,
+  TradeStatusQueueMessage
+} from "@market-bot-admin/shared";
 
 export {
   Bot,
@@ -16,7 +21,13 @@ export {
   type TradeItem
 } from "./Bot";
 export { loadBotConfigFromEnv, loadBotOptionsFromEnv, type BotRuntimeConfig } from "./config";
-export { TaskController, type IncomingTradeTaskMessage, type TradeStatusQueueMessage } from "./TaskController";
+export {
+  TaskController,
+  type IncomingTradeTaskMessage,
+  type TaskControllerDependencies,
+  type TaskControllerOptions,
+  type TradeStatusQueueMessage
+} from "./TaskController";
 export { isRetriableError, withRetries } from "./retry";
 export { LocalBotStorage, AzureBlobStorage, createBotStorageFromEnv } from "./storage";
 export type { BotOptions, SteamTokenPlatform } from "./IOptions";
@@ -31,11 +42,38 @@ async function main(): Promise<void> {
     })
   });
   const taskControllerOptions = loadTaskControllerOptionsFromEnv();
+  const incomingQueue = taskControllerOptions?.queueDriver === "inmemory"
+    ? new InMemoryStorageQueue<IncomingTradeTaskMessage>(
+        taskControllerOptions.incomingQueueName
+      )
+    : taskControllerOptions?.incomingQueue
+      ? new AzureStorageQueue<IncomingTradeTaskMessage>(
+          taskControllerOptions.incomingQueue
+        )
+      : null;
+  const statusQueue = taskControllerOptions?.queueDriver === "inmemory"
+    ? new InMemoryStorageQueue<TradeStatusQueueMessage>(
+        taskControllerOptions.statusQueueName
+      )
+    : taskControllerOptions?.statusQueue
+      ? new AzureStorageQueue<TradeStatusQueueMessage>(
+          taskControllerOptions.statusQueue
+        )
+      : null;
   const taskController = taskControllerOptions
-    ? new TaskController(bot, {
-        ...taskControllerOptions,
-        logger
-      })
+    ? new TaskController(
+        bot,
+        {
+          logger,
+          visibilityTimeoutSeconds: taskControllerOptions.visibilityTimeoutSeconds,
+          maxMessages: taskControllerOptions.maxMessages,
+          maxDequeueCount: taskControllerOptions.maxDequeueCount
+        },
+        {
+          incomingQueue: incomingQueue!,
+          statusQueue: statusQueue!
+        }
+      )
     : null;
 
   const shutdown = async (signal: NodeJS.Signals): Promise<void> => {
@@ -66,8 +104,9 @@ async function main(): Promise<void> {
     taskController.start();
     logger.info(
       {
-        incomingQueue: taskControllerOptions?.incomingQueue.queueName,
-        statusQueue: taskControllerOptions?.statusQueue.queueName
+        incomingQueue: taskControllerOptions?.incomingQueueName,
+        statusQueue: taskControllerOptions?.statusQueueName,
+        queueDriver: taskControllerOptions?.queueDriver
       },
       "Steam bot task controller started"
     );
