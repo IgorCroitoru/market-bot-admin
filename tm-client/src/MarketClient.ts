@@ -17,7 +17,7 @@ import {
   MassSetPriceResponse,
   SearchItemByHashNameSpecificResponse,
 } from './types';
-import { Currency, normalizePrice, toMarketWritePrice } from '@market-bot-admin/shared';
+import { Currency, fromMarketReadPrice, toMarketWritePrice } from '@market-bot-admin/shared';
 import type { IMarketClient } from './interfaces';
 
 /**
@@ -459,7 +459,7 @@ export class MarketClient implements IMarketClient {
         ...response.data,
         data: response.data.data.map((item) => ({
           ...item,
-          price: normalizePrice(item.price, response.data.currency),
+          price: fromMarketReadPrice(item.price, response.data.currency),
         })),
       };
     });

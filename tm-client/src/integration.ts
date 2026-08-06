@@ -12,7 +12,7 @@ import type {
   TradeItem as QueueTradeItem,
   TradeStatusQueueMessage,
 } from "@market-bot-admin/shared";
-import { marketPriceStep } from "@market-bot-admin/shared";
+import { marketPriceStep, normalizePrice } from "@market-bot-admin/shared";
 import type { AppLogger } from "@market-bot-admin/logging";
 import { MarketClient } from "./MarketClient";
 import type { ClientOptions, ItemInfo, OfferGiveP2P, Trade } from "./types";
@@ -286,12 +286,17 @@ class MarketBotIntegration {
         new Set(items.map((item) => item.item_id))
       );
 
-      const priceAdjustments: MarketPriceAdjustment[] = [];
+      const ownedItemIds = await this.marketItemsService.listMarketItemIds();
+      const priceAdjustments = await this.getMarketItemPriceAdjustments(
+        onSaleItems,
+        ownedItemIds
+      );
+      const adjustmentsByItemId = new Map(
+        priceAdjustments.map((adjustment) => [adjustment.record.id, adjustment])
+      );
 
       for (const item of onSaleItems) {
-        try {
-          const adjustment = await this.getMarketItemPriceAdjustment(item);
-
+          const adjustment = adjustmentsByItemId.get(item.item_id);
           if (adjustment) {
             this.logger.debug(
               {
@@ -304,7 +309,6 @@ class MarketBotIntegration {
               },
               `Adjustment found for item: ${item.market_hash_name}`
             );
-            priceAdjustments.push(adjustment);
           } else {
             this.logger.debug(
               {
@@ -316,12 +320,6 @@ class MarketBotIntegration {
               `No adjustment found for item: ${item.market_hash_name}`
             );
           }
-        } catch (error) {
-          this.logger.error(
-            { err: error, itemId: item.item_id, marketHashName: item.market_hash_name },
-            "Market item price adjustment failed"
-          );
-        }
       }
 
       await this.applyMarketItemPriceAdjustments(priceAdjustments);
@@ -348,58 +346,96 @@ class MarketBotIntegration {
   }
 
   private async getMarketItemPriceAdjustment(item: ItemInfo): Promise<MarketPriceAdjustment | null> {
-    const record = await this.marketItemsService.getMarketItem(item.item_id);
+    const ownedItemIds = await this.marketItemsService.listMarketItemIds();
+    const adjustments = await this.getMarketItemPriceAdjustments([item], ownedItemIds);
+    return adjustments[0] ?? null;
+  }
 
-    if (!record || record.fixedPrice) {
-      return null;
+  private async getMarketItemPriceAdjustments(
+    items: ItemInfo[],
+    ownedItemIds: Set<string>
+  ): Promise<MarketPriceAdjustment[]> {
+    const itemsByMarketHashName = new Map<string, ItemInfo[]>();
+    for (const item of items) {
+      const matchingItems = itemsByMarketHashName.get(item.market_hash_name) ?? [];
+      matchingItems.push(item);
+      itemsByMarketHashName.set(item.market_hash_name, matchingItems);
     }
 
-    const response = await this.client.searchItemByHashNameSpecific(item.market_hash_name, {
-      lang: "en",
-      withStickers: false,
-      withAlfaskins: false,
-    });
+    const adjustments: MarketPriceAdjustment[] = [];
+    for (const [marketHashName, matchingItems] of itemsByMarketHashName) {
+      try {
+        const records = await Promise.all(
+          matchingItems.map((item) => this.marketItemsService.getMarketItem(item.item_id))
+        );
+        const adjustableRecords = records.filter(
+          (record): record is MarketItemRecord => record !== null && !record.fixedPrice
+        );
 
-    if (!response.success || !Array.isArray(response.data)) {
-      this.logger.warn(
-        { itemId: item.item_id, response },
-        "Market listing search was not successful"
-      );
-      return null;
+        if (adjustableRecords.length === 0) {
+          continue;
+        }
+
+        const response = await this.client.searchItemByHashNameSpecific(marketHashName, {
+          lang: "en",
+          withStickers: false,
+          withAlfaskins: false,
+        });
+
+        if (!response.success || !Array.isArray(response.data)) {
+          this.logger.warn(
+            { marketHashName, itemIds: matchingItems.map((item) => item.item_id), response },
+            "Market listing search was not successful"
+          );
+          continue;
+        }
+
+        const lowestCompetingPrice = response.data
+          .filter((listing) => !ownedItemIds.has(String(listing.id)))
+          .reduce<number | null>(
+            (lowest, listing) => lowest === null || listing.price < lowest ? listing.price : lowest,
+            null
+          );
+
+        if (lowestCompetingPrice === null) {
+          continue;
+        }
+
+        for (const record of adjustableRecords) {
+          if (response.currency !== record.currency) {
+            this.logger.warn(
+              { itemId: record.id, itemCurrency: record.currency, searchCurrency: response.currency },
+              "Skipping price adjustment because listing currencies differ"
+            );
+            continue;
+          }
+
+          if (lowestCompetingPrice >= record.price) {
+            continue;
+          }
+
+          const minPrice = record.minPrice ?? record.price;
+          const adjustedPrice = normalizePrice(
+            Math.max(
+              minPrice,
+              lowestCompetingPrice - marketPriceStep(record.currency)
+            ),
+            record.currency
+          );
+
+          if (adjustedPrice < record.price) {
+            adjustments.push({ record, price: adjustedPrice, competingPrice: lowestCompetingPrice });
+          }
+        }
+      } catch (error) {
+        this.logger.error(
+          { err: error, marketHashName, itemIds: matchingItems.map((item) => item.item_id) },
+          "Market item price adjustment failed"
+        );
+      }
     }
 
-    if (response.currency !== record.currency) {
-      this.logger.warn(
-        { itemId: item.item_id, itemCurrency: record.currency, searchCurrency: response.currency },
-        "Skipping price adjustment because listing currencies differ"
-      );
-      return null;
-    }
-
-    const lowestCompetingPrice = response.data
-      .filter((listing) => String(listing.id) !== String(item.item_id))
-      .reduce<number | null>(
-        (lowest, listing) => lowest === null || listing.price < lowest ? listing.price : lowest,
-        null
-      );
-
-    if (lowestCompetingPrice === null || lowestCompetingPrice >= record.price) {
-      return null;
-    }
-
-    const minPrice = record.minPrice ?? record.price;
-    const priceStep = marketPriceStep(record.currency);
-    const adjustedPrice = Math.max(minPrice, lowestCompetingPrice - priceStep);
-
-    if (adjustedPrice >= record.price) {
-      return null;
-    }
-
-    return {
-      record,
-      price: adjustedPrice,
-      competingPrice: lowestCompetingPrice,
-    };
+    return adjustments;
   }
 
   private async applyMarketItemPriceAdjustments(

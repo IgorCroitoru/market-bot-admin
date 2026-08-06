@@ -52,6 +52,12 @@ export class MarketItemsStorageService implements IMarketItemsStorageService {
     return missingItemIds.length;
   }
 
+  async listMarketItemIds(): Promise<Set<string>> {
+    const itemIds = (await this.storage.listKeys())
+      .filter((key) => key !== SNAPSHOT_ROW_KEY);
+    return new Set(itemIds);
+  }
+
   async getMarketItem(itemId: string): Promise<MarketItemRecord | null> {
     return this.storage.get<MarketItemRecord>(itemId);
   }
