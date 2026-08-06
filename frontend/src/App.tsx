@@ -30,6 +30,154 @@ type SteamGuardCodeResponse = {
   validitySeconds: number;
 };
 
+type TradeStatusHistoryEntry = {
+  status: number;
+  oldStatus?: number;
+  statusText?: string;
+  processingStatus?: "processed" | "failed" | "changed";
+  error?: string;
+  timestamp: number;
+};
+
+type TradeOffer = {
+  id: string;
+  status: "pending" | "queued" | "sent" | "accepted" | "rejected" | "cancelled" | "failed";
+  offerId?: string | number;
+  botId?: string;
+  nik?: string;
+  secret?: string;
+  queueMessageId?: string;
+  registeredWithPlatform: boolean;
+  registeredAt?: number;
+  createdAt: string;
+  updatedAt: string;
+  deadlineAt?: string;
+  offerStatusHistory?: TradeStatusHistoryEntry[];
+  offerP2P?: { items?: unknown[] };
+  marketTrade?: { trade_id?: string | number; market_hash_name?: string };
+};
+
+function formatTimestamp(value?: string | number) {
+  if (!value) return "—";
+  const numericValue = typeof value === "number" && value < 10_000_000_000
+    ? value * 1000
+    : value;
+  const date = new Date(numericValue);
+  return Number.isNaN(date.getTime()) ? "—" : date.toLocaleString();
+}
+
+function TradeHistory() {
+  const [trades, setTrades] = useState<TradeOffer[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+
+  const loadTrades = useCallback(async () => {
+    setLoading(true);
+    setError("");
+
+    try {
+      const response = await fetch("/api/trades?limit=100", {
+        credentials: "include",
+        cache: "no-store",
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || "Could not load trade history");
+      setTrades(Array.isArray(data.trades) ? data.trades : []);
+    } catch (loadError) {
+      setError(loadError instanceof Error ? loadError.message : "Could not load trade history");
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    const timeoutId = window.setTimeout(() => void loadTrades(), 0);
+    return () => window.clearTimeout(timeoutId);
+  }, [loadTrades]);
+
+  return (
+    <section className="trade-panel" aria-labelledby="trade-history-heading">
+      <div className="trade-panel__header">
+        <div>
+          <p className="eyebrow">Trading activity</p>
+          <h2 id="trade-history-heading">Trade offer history</h2>
+          <p>Review Market trades, Steam offer state changes, and platform registration.</p>
+        </div>
+        <button className="secondary-button" onClick={() => void loadTrades()} disabled={loading}>
+          {loading ? "Loading…" : "Refresh trades"}
+        </button>
+      </div>
+
+      {error && <p className="error trade-panel__feedback" role="alert">{error}</p>}
+      {!loading && !error && trades.length === 0 && (
+        <div className="empty-state trade-panel__empty">No trade offers have been recorded yet.</div>
+      )}
+
+      {trades.length > 0 && (
+        <div className="trade-list">
+          {trades.map((trade) => {
+            const history = [...(trade.offerStatusHistory ?? [])].sort(
+              (left, right) => right.timestamp - left.timestamp
+            );
+            return (
+              <details className="trade-card" key={trade.id}>
+                <summary>
+                  <div className="trade-card__identity">
+                    <span className={`trade-status trade-status--${trade.status}`}>{trade.status}</span>
+                    <div>
+                      <strong>{trade.marketTrade?.market_hash_name || `Trade ${trade.id}`}</strong>
+                      <span>{trade.id}</span>
+                    </div>
+                  </div>
+                  <div className="trade-card__summary-meta">
+                    <span>{trade.offerP2P?.items?.length ?? 0} items</span>
+                    <time>{formatTimestamp(trade.updatedAt || trade.createdAt)}</time>
+                  </div>
+                </summary>
+
+                <div className="trade-card__body">
+                  <dl className="trade-metadata">
+                    <div><dt>Steam offer</dt><dd>{trade.offerId ?? "—"}</dd></div>
+                    <div><dt>Market trade</dt><dd>{trade.marketTrade?.trade_id ?? "—"}</dd></div>
+                    <div><dt>Bot</dt><dd>{trade.nik || trade.botId || "—"}</dd></div>
+                    <div><dt>Platform</dt><dd>{trade.registeredWithPlatform ? "Registered" : "Not registered"}</dd></div>
+                    <div><dt>Created</dt><dd>{formatTimestamp(trade.createdAt)}</dd></div>
+                    <div><dt>Deadline</dt><dd>{formatTimestamp(trade.deadlineAt)}</dd></div>
+                    <div><dt>Queue message</dt><dd>{trade.queueMessageId ?? "—"}</dd></div>
+                    <div><dt>Secret</dt><dd>{trade.secret ?? "—"}</dd></div>
+                  </dl>
+
+                  <div className="trade-timeline">
+                    <h3>Status history</h3>
+                    {history.length === 0 ? (
+                      <p className="trade-timeline__empty">No Steam status updates recorded.</p>
+                    ) : (
+                      <ol>
+                        {history.map((entry, index) => (
+                          <li key={`${entry.timestamp}-${entry.status}-${index}`}>
+                            <span className="trade-timeline__dot" />
+                            <div>
+                              <strong>{entry.statusText || `Steam status ${entry.status}`}</strong>
+                              <span>
+                                {entry.processingStatus || "status update"} · {formatTimestamp(entry.timestamp)}
+                              </span>
+                              {entry.error && <em>{entry.error}</em>}
+                            </div>
+                          </li>
+                        ))}
+                      </ol>
+                    )}
+                  </div>
+                </div>
+              </details>
+            );
+          })}
+        </div>
+      )}
+    </section>
+  );
+}
+
 function SteamGuardGenerator() {
   const [result, setResult] = useState<SteamGuardCodeResponse | null>(null);
   const [loading, setLoading] = useState(false);
@@ -354,6 +502,8 @@ export default function App() {
       </header>
 
       <SteamGuardGenerator />
+
+      <TradeHistory />
 
       <section className="summary" aria-label="Inventory summary">
         <strong>{items.length}</strong>
