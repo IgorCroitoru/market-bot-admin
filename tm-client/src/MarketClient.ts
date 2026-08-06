@@ -18,12 +18,13 @@ import {
   SearchItemByHashNameSpecificResponse,
 } from './types';
 import { Currency, normalizePrice, toMarketWritePrice } from '@market-bot-admin/shared';
+import type { IMarketClient } from './interfaces';
 
 /**
  * Market CSGO API Client
  * Handles API communication with rate limiting and retry logic
  */
-export class MarketClient {
+export class MarketClient implements IMarketClient {
   private axiosInstance: AxiosInstance;
   private limiter: Bottleneck;
   private retryConfig: RetryConfig;

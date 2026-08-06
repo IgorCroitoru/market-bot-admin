@@ -1,5 +1,8 @@
 import "dotenv/config";
 export { MarketClient } from './MarketClient';
+export { MarketItemsStorageService } from './MarketItemsStorageService';
+export { TradeStorageService } from './TradeStorageService';
+export type * from './interfaces';
 export * from './types';
 import { AzureStorageQueue, InMemoryStorageQueue } from "@market-bot-admin/queue";
 import {

@@ -19,6 +19,11 @@ import type { ClientOptions, ItemInfo, OfferGiveP2P, Trade } from "./types";
 import type { MarketItemRecord, TradeOffer } from "./types/schemas";
 import { MarketItemsStorageService } from "./MarketItemsStorageService";
 import { TradeStorageService } from "./TradeStorageService";
+import type {
+  IMarketClient,
+  IMarketItemsStorageService,
+  ITradeStorageService
+} from "./interfaces";
 
 const MASS_SET_PRICE_LIMIT = 50;
 
@@ -52,13 +57,13 @@ export interface MarketBotIntegrationOptions {
 }
 
 class MarketBotIntegration {
-  private readonly client: MarketClient;
+  private readonly client: IMarketClient;
   private readonly tradeQueue: QueueSender<IncomingTradeTaskMessage>;
   private readonly statusQueue: QueueConsumer<TradeStatusQueueMessage>;
   private readonly platformTradeReadyQueue: StorageQueue<PlatformTradeReadyMessage>;
   private readonly botStorage: KeyValueStore<BotStorageItems>;
-  private readonly tradesService: TradeStorageService;
-  private readonly marketItemsService: MarketItemsStorageService;
+  private readonly tradesService: ITradeStorageService;
+  private readonly marketItemsService: IMarketItemsStorageService;
   private readonly logger: AppLogger;
   private readonly options: ClientOptions;
   private readonly queueConsumerOptions: MarketBotIntegrationOptions["queueConsumer"];
@@ -286,8 +291,30 @@ class MarketBotIntegration {
       for (const item of onSaleItems) {
         try {
           const adjustment = await this.getMarketItemPriceAdjustment(item);
+
           if (adjustment) {
+            this.logger.debug(
+              {
+                itemId: adjustment.record.id,
+                itemName: item.market_hash_name,
+                currentPrice: adjustment.record.price,
+                competingPriceFound: adjustment.competingPrice,
+                adjustedPrice: adjustment.price,
+                currency: adjustment.record.currency,
+              },
+              `Adjustment found for item: ${item.market_hash_name}`
+            );
             priceAdjustments.push(adjustment);
+          } else {
+            this.logger.debug(
+              {
+                itemId: item.item_id,
+                itemName: item.market_hash_name,
+                currentPrice: item.price,
+                currency: item.currency,
+              },
+              `No adjustment found for item: ${item.market_hash_name}`
+            );
           }
         } catch (error) {
           this.logger.error(

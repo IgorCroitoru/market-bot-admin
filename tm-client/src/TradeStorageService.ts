@@ -1,7 +1,8 @@
 import type { EntityStore } from "@market-bot-admin/storage";
 import { TradeOffer } from "./types/schemas";
+import type { ITradeStorageService } from "./interfaces";
 
-export class TradeStorageService {
+export class TradeStorageService implements ITradeStorageService {
 
     private readonly storage: EntityStore
     constructor(storage: EntityStore) {

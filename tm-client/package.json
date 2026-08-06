@@ -24,10 +24,13 @@
     "@market-bot-admin/config": "file:../packages/config",
     "@market-bot-admin/logging": "file:../packages/logging",
     "@market-bot-admin/queue": "file:../packages/queue",
-    "@market-bot-admin/storage": "file:../packages/storage",
     "@market-bot-admin/shared": "file:../packages/shared",
+    "@market-bot-admin/storage": "file:../packages/storage",
     "axios": "^1.6.0",
     "bottleneck": "^2.19.5",
     "dotenv": "^17.4.2"
+  },
+  "devDependencies": {
+    "@types/jest": "^30.0.0"
   }
 }

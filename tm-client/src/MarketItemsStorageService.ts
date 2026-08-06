@@ -1,10 +1,11 @@
 import type { EntityStore } from "@market-bot-admin/storage";
 import { ItemInfo } from "./types";
 import { MarketItemRecord, MarketItemsSnapshotRecord } from "./types/schemas";
+import type { IMarketItemsStorageService } from "./interfaces";
 
 const SNAPSHOT_ROW_KEY = "latest";
 
-export class MarketItemsStorageService {
+export class MarketItemsStorageService implements IMarketItemsStorageService {
   constructor(private readonly storage: EntityStore) {}
 
   async saveMarketItem(item: ItemInfo, polledAt: string): Promise<void> {
