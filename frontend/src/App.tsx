@@ -388,6 +388,88 @@ function ItemEditor({
   );
 }
 
+type ItemGroupEditorProps = {
+  items: MarketItem[];
+  drafts: MinimumPriceDrafts;
+  fixedPriceDrafts: FixedPriceDrafts;
+  disabled: boolean;
+  errors: Record<string, string>;
+  onMinPriceChange: (value: string) => void;
+  onFixedPriceChange: (value: boolean) => void;
+};
+
+function ItemGroupEditor({
+  items,
+  drafts,
+  fixedPriceDrafts,
+  disabled,
+  errors,
+  onMinPriceChange,
+  onFixedPriceChange,
+}: ItemGroupEditorProps) {
+  const firstItem = items[0];
+  const draftValues = items.map((item) => drafts[item.id] ?? "");
+  const sharedDraft = draftValues.every((value) => value === draftValues[0]) ? draftValues[0] : "";
+  const fixedValues = items.map((item) => fixedPriceDrafts[item.id] ?? item.fixedPrice);
+  const allFixed = fixedValues.every(Boolean);
+  const mixedFixed = !allFixed && fixedValues.some(Boolean);
+  const groupErrors = [...new Set(items.map((item) => errors[item.id]).filter(Boolean))];
+  const prices = items.map((item) => item.price);
+  const minMarketPrice = Math.min(...prices);
+  const maxMarketPrice = Math.max(...prices);
+  const priceStep = firstItem.currency === "USD" || firstItem.currency === "EUR" ? "0.001" : "1";
+
+  return (
+    <article className="item-card item-card--group">
+      <div className="item-card__topline">
+        <span className="status status--live">On sale · {items.length} items</span>
+        <span className="currency">{firstItem.currency}</span>
+      </div>
+
+      <div>
+        <p className="eyebrow">Grouped by market hash name</p>
+        <h2>{firstItem.item.market_hash_name}</h2>
+        <p className="item-id">{items.length} active listings</p>
+      </div>
+
+      <details className="group-assets">
+        <summary>View listing IDs and assets</summary>
+        <ul>
+          {items.map((item) => <li key={item.id}><span>{item.id}</span><span>Asset {item.item.assetid}</span></li>)}
+        </ul>
+      </details>
+
+      <div className="editor">
+        <div className="price-label">
+          <span>Market price range</span>
+          <strong>{minMarketPrice === maxMarketPrice ? minMarketPrice : `${minMarketPrice}–${maxMarketPrice}`} {firstItem.currency}</strong>
+        </div>
+
+        <label>
+          <span>Minimum price for all ({firstItem.currency})</span>
+          <input
+            type="number"
+            min="0"
+            max={minMarketPrice}
+            step={priceStep}
+            value={sharedDraft}
+            placeholder={sharedDraft === "" ? "Mixed values" : undefined}
+            disabled={disabled}
+            aria-invalid={groupErrors.length > 0}
+            onChange={(event) => onMinPriceChange(event.target.value)}
+          />
+          {groupErrors.map((error) => <span className="field-error" key={error}>{error}</span>)}
+        </label>
+
+        <label className="checkbox-row">
+          <input type="checkbox" checked={allFixed} disabled={disabled} onChange={(event) => onFixedPriceChange(event.target.checked)} />
+          <span>Keep market price fixed for all{mixedFixed ? " (currently mixed)" : ""}</span>
+        </label>
+      </div>
+    </article>
+  );
+}
+
 function createDrafts(items: MarketItem[]): MinimumPriceDrafts {
   return Object.fromEntries(
     items.map((item) => [item.id, String(item.minPrice ?? item.price)])
@@ -400,6 +482,7 @@ function createFixedPriceDrafts(items: MarketItem[]): FixedPriceDrafts {
 
 export default function App() {
   const [activeSection, setActiveSection] = useState<AppSection>("inventory");
+  const [groupActiveItems, setGroupActiveItems] = useState(true);
   const [items, setItems] = useState<MarketItem[]>([]);
   const [drafts, setDrafts] = useState<MinimumPriceDrafts>({});
   const [fixedPriceDrafts, setFixedPriceDrafts] = useState<FixedPriceDrafts>({});
@@ -466,6 +549,22 @@ export default function App() {
 
     return left.item.market_hash_name.localeCompare(right.item.market_hash_name);
   }), [items]);
+
+  const displayedItemGroups = useMemo(() => {
+    if (!groupActiveItems) return sortedItems.map((item) => [item]);
+
+    const activeGroups = new Map<string, MarketItem[]>();
+    const ungroupedItems: MarketItem[][] = [];
+    for (const item of sortedItems) {
+      if (!item.isOnSale) {
+        ungroupedItems.push([item]);
+        continue;
+      }
+      const key = `${item.item.market_hash_name}\u0000${item.currency}`;
+      activeGroups.set(key, [...(activeGroups.get(key) ?? []), item]);
+    }
+    return [...activeGroups.values(), ...ungroupedItems];
+  }, [groupActiveItems, sortedItems]);
 
   async function saveAll() {
     if (changedItems.length === 0 || Object.keys(validationErrors).length > 0) {
@@ -545,11 +644,17 @@ export default function App() {
         </div>
       </header>
 
-      <section className="summary" aria-label="Inventory summary">
-        <strong>{items.length}</strong>
-        <span>{items.length === 1 ? "listed item" : "listed items"}</span>
-        {changedItems.length > 0 && <span className="pending-count">{changedItems.length} unsaved</span>}
-      </section>
+      <div className="inventory-toolbar">
+        <section className="summary" aria-label="Inventory summary">
+          <strong>{items.length}</strong>
+          <span>{items.length === 1 ? "listed item" : "listed items"}</span>
+          {changedItems.length > 0 && <span className="pending-count">{changedItems.length} unsaved</span>}
+        </section>
+        <label className="group-toggle">
+          <input type="checkbox" checked={groupActiveItems} onChange={(event) => setGroupActiveItems(event.target.checked)} />
+          <span>Group active items by name</span>
+        </label>
+      </div>
 
       <div className="feedback page-feedback" aria-live="polite">
         {error && <span className="error">{error}</span>}
@@ -561,21 +666,38 @@ export default function App() {
       )}
 
       <section className="item-grid">
-        {sortedItems.map((item) => (
-          <ItemEditor
-            key={item.id}
-            item={item}
-            minPrice={drafts[item.id] ?? ""}
-            fixedPrice={fixedPriceDrafts[item.id] ?? item.fixedPrice}
+        {displayedItemGroups.map((group) => group.length > 1 ? (
+          <ItemGroupEditor
+            key={`group-${group[0].item.market_hash_name}-${group[0].currency}`}
+            items={group}
+            drafts={drafts}
+            fixedPriceDrafts={fixedPriceDrafts}
             disabled={saving}
-            error={validationErrors[item.id]}
+            errors={validationErrors}
             onMinPriceChange={(value) => {
               setMessage("");
-              setDrafts((current) => ({ ...current, [item.id]: value }));
+              setDrafts((current) => ({ ...current, ...Object.fromEntries(group.map((item) => [item.id, value])) }));
             }}
             onFixedPriceChange={(value) => {
               setMessage("");
-              setFixedPriceDrafts((current) => ({ ...current, [item.id]: value }));
+              setFixedPriceDrafts((current) => ({ ...current, ...Object.fromEntries(group.map((item) => [item.id, value])) }));
+            }}
+          />
+        ) : (
+          <ItemEditor
+            key={group[0].id}
+            item={group[0]}
+            minPrice={drafts[group[0].id] ?? ""}
+            fixedPrice={fixedPriceDrafts[group[0].id] ?? group[0].fixedPrice}
+            disabled={saving}
+            error={validationErrors[group[0].id]}
+            onMinPriceChange={(value) => {
+              setMessage("");
+              setDrafts((current) => ({ ...current, [group[0].id]: value }));
+            }}
+            onFixedPriceChange={(value) => {
+              setMessage("");
+              setFixedPriceDrafts((current) => ({ ...current, [group[0].id]: value }));
             }}
           />
         ))}
