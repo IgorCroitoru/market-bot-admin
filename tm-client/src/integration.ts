@@ -960,7 +960,10 @@ function shouldQueuePlatformRegistration(
   message: TradeStatusQueueMessage,
   trade: TradeOffer
 ): boolean {
-  return message.status === 2 && Boolean(trade.offerId) && !trade.registeredWithPlatform;
+  return (
+    [2, 3, 9].includes(message.status)) //sometimes offer can go from status 9 (ConfirmationNeeded) to 3 (Accepted) and never through 2 (Active)
+    && Boolean(trade.offerId) 
+    && !trade.registeredWithPlatform;
 }
 
 function asOptionalString(value: unknown): string | undefined {
