@@ -37,6 +37,7 @@ type TradeStatusHistoryEntry = {
   processingStatus?: "processed" | "failed" | "changed";
   error?: string;
   timestamp: number;
+  data?: Record<string, unknown>;
 };
 
 type TradeOffer = {
@@ -49,13 +50,18 @@ type TradeOffer = {
   queueMessageId?: string;
   registeredWithPlatform: boolean;
   registeredAt?: number;
+  timestamp: number;
   createdAt: string;
   updatedAt: string;
   deadlineAt?: string;
   offerStatusHistory?: TradeStatusHistoryEntry[];
   offerP2P?: { items?: unknown[] };
-  marketTrade?: { trade_id?: string | number; market_hash_name?: string };
+  marketTrade?: { trade_id?: string | number; market_hash_name?: string; [key: string]: unknown };
+  source?: "market-p2p";
+  data?: Record<string, unknown>;
 };
+
+type AppSection = "inventory" | "guard" | "history";
 
 function formatTimestamp(value?: string | number) {
   if (!value) return "—";
@@ -64,6 +70,17 @@ function formatTimestamp(value?: string | number) {
     : value;
   const date = new Date(numericValue);
   return Number.isNaN(date.getTime()) ? "—" : date.toLocaleString();
+}
+
+function FieldValue({ value }: { value: unknown }) {
+  if (value === undefined || value === null || value === "") return <span className="empty-value">—</span>;
+  if (typeof value === "boolean") return <>{value ? "true" : "false"}</>;
+  if (typeof value === "object") return <pre>{JSON.stringify(value, null, 2)}</pre>;
+  return <>{String(value)}</>;
+}
+
+function TradeField({ label, value, date = false }: { label: string; value: unknown; date?: boolean }) {
+  return <div><dt>{label}</dt><dd>{date ? formatTimestamp(value as string | number | undefined) : <FieldValue value={value} />}</dd></div>;
 }
 
 function TradeHistory() {
@@ -137,14 +154,23 @@ function TradeHistory() {
 
                 <div className="trade-card__body">
                   <dl className="trade-metadata">
-                    <div><dt>Steam offer</dt><dd>{trade.offerId ?? "—"}</dd></div>
-                    <div><dt>Market trade</dt><dd>{trade.marketTrade?.trade_id ?? "—"}</dd></div>
-                    <div><dt>Bot</dt><dd>{trade.nik || trade.botId || "—"}</dd></div>
-                    <div><dt>Platform</dt><dd>{trade.registeredWithPlatform ? "Registered" : "Not registered"}</dd></div>
-                    <div><dt>Created</dt><dd>{formatTimestamp(trade.createdAt)}</dd></div>
-                    <div><dt>Deadline</dt><dd>{formatTimestamp(trade.deadlineAt)}</dd></div>
-                    <div><dt>Queue message</dt><dd>{trade.queueMessageId ?? "—"}</dd></div>
-                    <div><dt>Secret</dt><dd>{trade.secret ?? "—"}</dd></div>
+                    <TradeField label="id" value={trade.id} />
+                    <TradeField label="status" value={trade.status} />
+                    <TradeField label="offerId" value={trade.offerId} />
+                    <TradeField label="botId" value={trade.botId} />
+                    <TradeField label="nik" value={trade.nik} />
+                    <TradeField label="secret" value={trade.secret} />
+                    <TradeField label="queueMessageId" value={trade.queueMessageId} />
+                    <TradeField label="registeredWithPlatform" value={trade.registeredWithPlatform} />
+                    <TradeField label="registeredAt" value={trade.registeredAt} date />
+                    <TradeField label="timestamp" value={trade.timestamp} date />
+                    <TradeField label="createdAt" value={trade.createdAt} date />
+                    <TradeField label="updatedAt" value={trade.updatedAt} date />
+                    <TradeField label="deadlineAt" value={trade.deadlineAt} date />
+                    <TradeField label="source" value={trade.source} />
+                    <TradeField label="offerP2P" value={trade.offerP2P} />
+                    <TradeField label="marketTrade" value={trade.marketTrade} />
+                    <TradeField label="data" value={trade.data} />
                   </dl>
 
                   <div className="trade-timeline">
@@ -156,12 +182,17 @@ function TradeHistory() {
                         {history.map((entry, index) => (
                           <li key={`${entry.timestamp}-${entry.status}-${index}`}>
                             <span className="trade-timeline__dot" />
-                            <div>
+                            <div className="trade-timeline__entry">
                               <strong>{entry.statusText || `Steam status ${entry.status}`}</strong>
-                              <span>
-                                {entry.processingStatus || "status update"} · {formatTimestamp(entry.timestamp)}
-                              </span>
-                              {entry.error && <em>{entry.error}</em>}
+                              <dl className="history-fields">
+                                <TradeField label="status" value={entry.status} />
+                                <TradeField label="oldStatus" value={entry.oldStatus} />
+                                <TradeField label="statusText" value={entry.statusText} />
+                                <TradeField label="processingStatus" value={entry.processingStatus} />
+                                <TradeField label="error" value={entry.error} />
+                                <TradeField label="timestamp" value={entry.timestamp} date />
+                                <TradeField label="data" value={entry.data} />
+                              </dl>
                             </div>
                           </li>
                         ))}
@@ -182,7 +213,7 @@ function SteamGuardGenerator() {
   const [result, setResult] = useState<SteamGuardCodeResponse | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-  const [now, setNow] = useState(Date.now());
+  const [now, setNow] = useState(0);
   const [copied, setCopied] = useState(false);
 
   useEffect(() => {
@@ -368,6 +399,7 @@ function createFixedPriceDrafts(items: MarketItem[]): FixedPriceDrafts {
 }
 
 export default function App() {
+  const [activeSection, setActiveSection] = useState<AppSection>("inventory");
   const [items, setItems] = useState<MarketItem[]>([]);
   const [drafts, setDrafts] = useState<MinimumPriceDrafts>({});
   const [fixedPriceDrafts, setFixedPriceDrafts] = useState<FixedPriceDrafts>({});
@@ -480,6 +512,19 @@ export default function App() {
 
   return (
     <main className="page">
+      <nav className="main-nav" aria-label="Admin sections">
+        <button className="main-nav__brand" onClick={() => setActiveSection("inventory")}>Market Bot Admin</button>
+        <div className="main-nav__tabs">
+          {(["inventory", "guard", "history"] as const).map((section) => (
+            <button key={section} className={activeSection === section ? "main-nav__tab main-nav__tab--active" : "main-nav__tab"} onClick={() => setActiveSection(section)} aria-current={activeSection === section ? "page" : undefined}>
+              {section === "guard" ? "Steam Guard" : section === "history" ? "Trade history" : "Inventory"}
+            </button>
+          ))}
+        </div>
+        <a className="logout-link" href="/.auth/logout">Logout</a>
+      </nav>
+
+      {activeSection === "inventory" && <>
       <header className="page-header">
         <div>
           <p className="eyebrow">Market Bot Admin</p>
@@ -497,13 +542,8 @@ export default function App() {
           >
             {saving ? "Saving…" : `Save all${changedItems.length ? ` (${changedItems.length})` : ""}`}
           </button>
-          <a className="logout-link" href="/.auth/logout">Logout</a>
         </div>
       </header>
-
-      <SteamGuardGenerator />
-
-      <TradeHistory />
 
       <section className="summary" aria-label="Inventory summary">
         <strong>{items.length}</strong>
@@ -540,6 +580,10 @@ export default function App() {
           />
         ))}
       </section>
+      </>}
+
+      {activeSection === "guard" && <SteamGuardGenerator />}
+      {activeSection === "history" && <TradeHistory />}
     </main>
   );
 }
