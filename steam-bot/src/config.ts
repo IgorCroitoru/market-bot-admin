@@ -17,7 +17,7 @@ const envSchema = z.object({
   STEAM_GUARD_CODE: z.string().optional(),
   STEAM_API_DOMAIN: z.string().default("localhost"),
   STEAM_TOKEN_PLATFORM: z.enum(["mobile", "web", "client"]).default("mobile"),
-  BOT_INVENTORY_POLL_INTERVAL_MS: numberFromEnv(12 * 60 * 60_000),
+  BOT_INVENTORY_POLL_INTERVAL_MS: numberFromEnv(50 * 60_000),
 
   BOT_POLL_INTERVAL_MS: numberFromEnv(30_000),
   BOT_CANCEL_TIME_MS: numberFromEnv(10 * 60_000),
